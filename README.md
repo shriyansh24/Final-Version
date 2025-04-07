@@ -16,23 +16,39 @@ Welcome to the **CPI (Cost Per Interview) Dashboard**, a Streamlit-powered web a
 ## 🗂 Folder Structure
 
 ```
-Info-Viz/
-│
-├── app/
-│   └── fixed-app-updated.py           # Streamlit main app
-│
+Final-Version/
+├── BidPricingAnalytics/
+│   ├── components/
+│   │   ├── analysis/
+│   │   │   ├── __init__.py
+│   │   │   ├── insights.py
+│   │   │   ├── overview.py
+│   │   │   └── prediction.py
+│   │   └── models/
+│   │       ├── __init__.py
+│   │       ├── predictor.py
+│   │       └── trainer.py
+│   └── utils/
+│       ├── __init__.py
+│       ├── config.py
+│       ├── data_loader.py
+│       ├── data_processor.py
+│       ├── visualization.py
+│       ├── visualization_analysis.py
+│       ├── visualization_basic.py
+│       └── visualization_prediction.py
+│   └── main.py
 ├── data/
-│   ├── invoiced_jobs_*.xlsx           # Won deals data
-│   ├── DealItemReportLOST.xlsx        # Lost deals data
-│   └── Account+List+with+Segment.csv  # Extra input data
-│
+│   ├── Account+List+with+Segment.csv
+│   ├── Data Dictionary.xlsx
+│   ├── DealItemReportLOST.xlsx
+│   └── invoiced_jobs_this_year_*.xlsx
 ├── docs/
 │   ├── installation-guide.txt
 │   └── readme-file.txt
-│
-├── requirements.txt                   # Python dependencies
-├── .gitignore                         # Ignored files and folders
-└── README.md                          # You are here!
+├── .gitignore
+├── README.md
+└── requirements.txt
 ```
 
 ---
