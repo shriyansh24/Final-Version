@@ -19,25 +19,28 @@ Welcome to the **CPI (Cost Per Interview) Dashboard**, a Streamlit-powered web a
 Final-Version/
 ├── BidPricingAnalytics/
 │   ├── components/
-│   │   ├── analysis/
-│   │   │   ├── __init__.py
-│   │   │   ├── insights.py
-│   │   │   ├── overview.py
-│   │   │   └── prediction.py
-│   │   └── models/
+│   │   ├── __init__.py
+│   │   ├── insights.py
+│   │   ├── overview.py
+│   │   ├── prediction.py
+│   │   └── analysis/
 │   │       ├── __init__.py
-│   │       ├── predictor.py
-│   │       └── trainer.py
-│   └── utils/
-│       ├── __init__.py
-│       ├── config.py
-│       ├── data_loader.py
-│       ├── data_processor.py
-│       ├── visualization.py
-│       ├── visualization_analysis.py
-│       ├── visualization_basic.py
-│       └── visualization_prediction.py
-│   └── main.py
+│   │       ├── analysis_basic.py
+│   │       └── analysis_advanced.py
+│   ├── models/
+│   │   ├── __init__.py
+│   │   ├── predictor.py
+│   │   └── trainer.py
+│   ├── utils/
+│   │   ├── __init__.py
+│   │   ├── data_loader.py
+│   │   ├── data_processor.py
+│   │   ├── visualization.py
+│   │   ├── visualization_analysis.py
+│   │   ├── visualization_basic.py
+│   │   └── visualization_prediction.py
+│   ├── config.py              # Centralized app configuration
+│   └── main.py                # Streamlit app entry point
 ├── data/
 │   ├── Account+List+with+Segment.csv
 │   ├── Data Dictionary.xlsx
@@ -49,6 +52,7 @@ Final-Version/
 ├── .gitignore
 ├── README.md
 └── requirements.txt
+
 ```
 
 ---
