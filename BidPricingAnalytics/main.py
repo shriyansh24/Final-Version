@@ -16,6 +16,13 @@ from typing import Dict, List, Tuple, Any, Optional
 # Import configuration
 import config
 
+# Import UI components
+from ui_components import (
+    setup_ui, render_header, render_card, 
+    metrics_row, apply_chart_styling,
+    COLOR_SYSTEM
+)
+
 # Import utility modules
 from utils.data_loader import load_data
 from utils.data_processor import apply_all_bins, engineer_features, get_data_summary
@@ -30,17 +37,12 @@ from components.insights import show_insights
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Set page config
-st.set_page_config(
-    page_title=config.APP_TITLE,
-    page_icon=config.APP_ICON,
-    layout=config.APP_LAYOUT,
-    initial_sidebar_state=config.SIDEBAR_STATE
-)
-
 def main():
     """Main application function to orchestrate the dashboard."""
-    # Add app title and description
+    # Setup UI components
+    setup_ui()
+    
+    # Add app title and description in sidebar
     st.sidebar.title("CPI Analysis & Prediction")
     
     # Navigation
@@ -49,6 +51,9 @@ def main():
         "Choose a mode",
         ["Overview", "CPI Analysis", "CPI Prediction", "Insights & Recommendations"]
     )
+    
+    # Render page header
+    render_header(current_page=app_mode)
     
     # Load data
     with st.spinner("Loading data..."):
@@ -82,8 +87,19 @@ def main():
         st.error(f"Error processing data: {str(e)}")
         st.stop()
     
-    # Add sidebar filters
-    st.sidebar.title("Filtering Options")
+    # Add sidebar filters with enhanced styling
+    st.sidebar.markdown("---")
+    st.sidebar.markdown(f"""
+    <div style="
+        background-color: {COLOR_SYSTEM['BACKGROUND']['CARD']};
+        border-radius: 0.5rem;
+        padding: 1rem;
+        margin-bottom: 1rem;
+        border-left: 4px solid {COLOR_SYSTEM['ACCENT']['BLUE']};
+    ">
+        <h3 style="margin-top: 0;">Filtering Options</h3>
+    </div>
+    """, unsafe_allow_html=True)
     
     # Filter for extreme values
     show_filtered = st.sidebar.checkbox(
@@ -102,37 +118,72 @@ def main():
         lost_data = lost_df
         combined_data = combined_df
     
-    # Display metrics
+    # Display metrics in sidebar with enhanced styling
     data_summary = get_data_summary(combined_data)
     
-    st.sidebar.title("Data Summary")
+    st.sidebar.markdown("---")
+    st.sidebar.markdown(f"""
+    <div style="
+        background-color: {COLOR_SYSTEM['BACKGROUND']['CARD']};
+        border-radius: 0.5rem;
+        padding: 1rem;
+        margin-bottom: 1rem;
+        border-left: 4px solid {COLOR_SYSTEM['ACCENT']['PURPLE']};
+    ">
+        <h3 style="margin-top: 0;">Data Summary</h3>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Create metrics data for display
+    metrics_data = []
+    
     if 'Won' in data_summary:
-        st.sidebar.metric(
-            "Won Bids Avg CPI", 
-            f"${data_summary['Won']['Avg_CPI']:.2f}"
-        )
+        metrics_data.append({
+            "label": "Won Bids Avg CPI",
+            "value": f"${data_summary['Won']['Avg_CPI']:.2f}"
+        })
     
     if 'Lost' in data_summary:
-        st.sidebar.metric(
-            "Lost Bids Avg CPI", 
-            f"${data_summary['Lost']['Avg_CPI']:.2f}"
-        )
+        metrics_data.append({
+            "label": "Lost Bids Avg CPI",
+            "value": f"${data_summary['Lost']['Avg_CPI']:.2f}"
+        })
     
     if 'Won' in data_summary and 'Lost' in data_summary:
         diff = data_summary['Lost']['Avg_CPI'] - data_summary['Won']['Avg_CPI']
+        metrics_data.append({
+            "label": "CPI Difference",
+            "value": f"${diff:.2f}",
+            "delta": f"{diff:.2f}"
+        })
+    
+    # Show metrics in sidebar
+    for metric in metrics_data:
         st.sidebar.metric(
-            "CPI Difference", 
-            f"${diff:.2f}",
-            delta=f"{diff:.2f}"
+            label=metric["label"],
+            value=metric["value"],
+            delta=metric.get("delta", None)
         )
     
-    # Add footer with info
+    # Add footer with enhanced styling
     st.sidebar.markdown("---")
-    st.sidebar.info(
-        "This dashboard provides analysis and prediction tools for "
-        "Cost Per Interview (CPI) pricing in market research projects. "
-        "Navigate between different sections using the radio buttons above."
-    )
+    st.sidebar.markdown(f"""
+    <div style="
+        background-color: {COLOR_SYSTEM['BACKGROUND']['CARD']};
+        border-radius: 0.5rem;
+        padding: 1rem;
+        font-size: 0.9rem;
+        color: {COLOR_SYSTEM['NEUTRAL']['DARKER']};
+    ">
+        <p style="margin: 0;">
+            This dashboard provides analysis and prediction tools for 
+            Cost Per Interview (CPI) pricing in market research projects.
+        </p>
+        <p style="margin: 0.5rem 0 0 0;">
+            <span style="color: {COLOR_SYSTEM['ACCENT']['BLUE']};">●</span> <strong>Data updated:</strong> April 2025
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
     
     # Show selected component based on app_mode
     if app_mode == "Overview":

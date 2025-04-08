@@ -22,6 +22,10 @@ import logging
 import streamlit as st
 from typing import Dict, List, Optional, Union, Tuple
 
+# Import configuration and UI components
+from config import COLOR_SYSTEM, TYPOGRAPHY
+from ui_components import apply_chart_styling, add_insights_annotation
+
 # Configure logging
 logger = logging.getLogger(__name__)
 
@@ -31,7 +35,17 @@ def create_type_distribution_chart(df: pd.DataFrame) -> go.Figure:
     try:
         if len(df) < 5:
             fig = go.Figure()
-            fig.add_annotation(text="Not enough data for visualization", x=0.5, y=0.5, showarrow=False)
+            fig.add_annotation(
+                text="Not enough data for visualization", 
+                x=0.5, 
+                y=0.5, 
+                showarrow=False,
+                font=dict(
+                    family=TYPOGRAPHY['FONT_FAMILY'],
+                    size=14,
+                    color=COLOR_SYSTEM['ACCENT']['RED']
+                )
+            )
             return fig
             
         # Clean up data
@@ -39,7 +53,17 @@ def create_type_distribution_chart(df: pd.DataFrame) -> go.Figure:
         if 'Type' not in df.columns:
             logger.error("Type column not found in dataframe")
             fig = go.Figure()
-            fig.add_annotation(text="Missing required data", x=0.5, y=0.5, showarrow=False)
+            fig.add_annotation(
+                text="Missing required data", 
+                x=0.5, 
+                y=0.5, 
+                showarrow=False,
+                font=dict(
+                    family=TYPOGRAPHY['FONT_FAMILY'],
+                    size=14,
+                    color=COLOR_SYSTEM['ACCENT']['RED']
+                )
+            )
             return fig
             
         # Proceed with original implementation
@@ -48,7 +72,17 @@ def create_type_distribution_chart(df: pd.DataFrame) -> go.Figure:
     except Exception as e:
         logger.error(f"Error in create_type_distribution_chart: {e}", exc_info=True)
         fig = go.Figure()
-        fig.add_annotation(text=f"Error creating chart: {str(e)}", x=0.5, y=0.5, showarrow=False)
+        fig.add_annotation(
+            text=f"Error creating chart: {str(e)}", 
+            x=0.5, 
+            y=0.5, 
+            showarrow=False,
+            font=dict(
+                family=TYPOGRAPHY['FONT_FAMILY'],
+                size=14,
+                color=COLOR_SYSTEM['ACCENT']['RED']
+            )
+        )
         return fig
 
 def create_cpi_distribution_boxplot(won_data: pd.DataFrame, lost_data: pd.DataFrame) -> go.Figure:
@@ -57,14 +91,34 @@ def create_cpi_distribution_boxplot(won_data: pd.DataFrame, lost_data: pd.DataFr
         # Validate input data
         if len(won_data) < 5 or len(lost_data) < 5:
             fig = go.Figure()
-            fig.add_annotation(text="Not enough data for visualization", x=0.5, y=0.5, showarrow=False)
+            fig.add_annotation(
+                text="Not enough data for visualization", 
+                x=0.5, 
+                y=0.5, 
+                showarrow=False,
+                font=dict(
+                    family=TYPOGRAPHY['FONT_FAMILY'],
+                    size=14,
+                    color=COLOR_SYSTEM['ACCENT']['RED']
+                )
+            )
             return fig
         
         # Check for CPI column and numeric values
         for df in [won_data, lost_data]:
             if 'CPI' not in df.columns:
                 fig = go.Figure()
-                fig.add_annotation(text="Missing CPI column in data", x=0.5, y=0.5, showarrow=False)
+                fig.add_annotation(
+                    text="Missing CPI column in data", 
+                    x=0.5, 
+                    y=0.5, 
+                    showarrow=False,
+                    font=dict(
+                        family=TYPOGRAPHY['FONT_FAMILY'],
+                        size=14,
+                        color=COLOR_SYSTEM['ACCENT']['RED']
+                    )
+                )
                 return fig
                 
             # Convert to numeric and drop NaN values
@@ -76,7 +130,17 @@ def create_cpi_distribution_boxplot(won_data: pd.DataFrame, lost_data: pd.DataFr
     except Exception as e:
         logger.error(f"Error in create_cpi_distribution_boxplot: {e}", exc_info=True)
         fig = go.Figure()
-        fig.add_annotation(text=f"Error creating chart: {str(e)}", x=0.5, y=0.5, showarrow=False)
+        fig.add_annotation(
+            text=f"Error creating chart: {str(e)}", 
+            x=0.5, 
+            y=0.5, 
+            showarrow=False,
+            font=dict(
+                family=TYPOGRAPHY['FONT_FAMILY'],
+                size=14,
+                color=COLOR_SYSTEM['ACCENT']['RED']
+            )
+        )
         return fig
 
 def create_cpi_histogram_comparison(won_data: pd.DataFrame, lost_data: pd.DataFrame) -> go.Figure:
@@ -85,7 +149,17 @@ def create_cpi_histogram_comparison(won_data: pd.DataFrame, lost_data: pd.DataFr
         # Validate input data
         if len(won_data) < 5 or len(lost_data) < 5:
             fig = go.Figure()
-            fig.add_annotation(text="Not enough data for visualization", x=0.5, y=0.5, showarrow=False)
+            fig.add_annotation(
+                text="Not enough data for visualization", 
+                x=0.5, 
+                y=0.5, 
+                showarrow=False,
+                font=dict(
+                    family=TYPOGRAPHY['FONT_FAMILY'],
+                    size=14,
+                    color=COLOR_SYSTEM['ACCENT']['RED']
+                )
+            )
             return fig
         
         # Clean up data
@@ -96,7 +170,17 @@ def create_cpi_histogram_comparison(won_data: pd.DataFrame, lost_data: pd.DataFr
         for df in [won_data, lost_data]:
             if 'CPI' not in df.columns:
                 fig = go.Figure()
-                fig.add_annotation(text="Missing CPI column in data", x=0.5, y=0.5, showarrow=False)
+                fig.add_annotation(
+                    text="Missing CPI column in data", 
+                    x=0.5, 
+                    y=0.5, 
+                    showarrow=False,
+                    font=dict(
+                        family=TYPOGRAPHY['FONT_FAMILY'],
+                        size=14,
+                        color=COLOR_SYSTEM['ACCENT']['RED']
+                    )
+                )
                 return fig
                 
             # Convert to numeric and handle NaN values
@@ -109,7 +193,17 @@ def create_cpi_histogram_comparison(won_data: pd.DataFrame, lost_data: pd.DataFr
     except Exception as e:
         logger.error(f"Error in create_cpi_histogram_comparison: {e}", exc_info=True)
         fig = go.Figure()
-        fig.add_annotation(text=f"Error creating chart: {str(e)}", x=0.5, y=0.5, showarrow=False)
+        fig.add_annotation(
+            text=f"Error creating chart: {str(e)}", 
+            x=0.5, 
+            y=0.5, 
+            showarrow=False,
+            font=dict(
+                family=TYPOGRAPHY['FONT_FAMILY'],
+                size=14,
+                color=COLOR_SYSTEM['ACCENT']['RED']
+            )
+        )
         return fig
 
 def create_cpi_efficiency_chart(won_data: pd.DataFrame, lost_data: pd.DataFrame) -> go.Figure:
@@ -118,7 +212,17 @@ def create_cpi_efficiency_chart(won_data: pd.DataFrame, lost_data: pd.DataFrame)
         # Validate input data
         if len(won_data) < 5 or len(lost_data) < 5:
             fig = go.Figure()
-            fig.add_annotation(text="Not enough data for visualization", x=0.5, y=0.5, showarrow=False)
+            fig.add_annotation(
+                text="Not enough data for visualization", 
+                x=0.5, 
+                y=0.5, 
+                showarrow=False,
+                font=dict(
+                    family=TYPOGRAPHY['FONT_FAMILY'],
+                    size=14,
+                    color=COLOR_SYSTEM['ACCENT']['RED']
+                )
+            )
             return fig
             
         # Clean up data
@@ -131,7 +235,17 @@ def create_cpi_efficiency_chart(won_data: pd.DataFrame, lost_data: pd.DataFrame)
             missing_cols = [col for col in required_cols if col not in df.columns]
             if missing_cols:
                 fig = go.Figure()
-                fig.add_annotation(text=f"Missing columns: {', '.join(missing_cols)}", x=0.5, y=0.5, showarrow=False)
+                fig.add_annotation(
+                    text=f"Missing columns: {', '.join(missing_cols)}", 
+                    x=0.5, 
+                    y=0.5, 
+                    showarrow=False,
+                    font=dict(
+                        family=TYPOGRAPHY['FONT_FAMILY'],
+                        size=14,
+                        color=COLOR_SYSTEM['ACCENT']['RED']
+                    )
+                )
                 return fig
                 
             # Convert to numeric and handle issues
@@ -151,7 +265,17 @@ def create_cpi_efficiency_chart(won_data: pd.DataFrame, lost_data: pd.DataFrame)
     except Exception as e:
         logger.error(f"Error in create_cpi_efficiency_chart: {e}", exc_info=True)
         fig = go.Figure()
-        fig.add_annotation(text=f"Error creating chart: {str(e)}", x=0.5, y=0.5, showarrow=False)
+        fig.add_annotation(
+            text=f"Error creating chart: {str(e)}", 
+            x=0.5, 
+            y=0.5, 
+            showarrow=False,
+            font=dict(
+                family=TYPOGRAPHY['FONT_FAMILY'],
+                size=14,
+                color=COLOR_SYSTEM['ACCENT']['RED']
+            )
+        )
         return fig
 
 def create_cpi_vs_ir_scatter(won_data: pd.DataFrame, lost_data: pd.DataFrame, add_trend_line: bool = True) -> go.Figure:
@@ -160,7 +284,17 @@ def create_cpi_vs_ir_scatter(won_data: pd.DataFrame, lost_data: pd.DataFrame, ad
         # Validate input data
         if len(won_data) < 5 or len(lost_data) < 5:
             fig = go.Figure()
-            fig.add_annotation(text="Not enough data for visualization", x=0.5, y=0.5, showarrow=False)
+            fig.add_annotation(
+                text="Not enough data for visualization", 
+                x=0.5, 
+                y=0.5, 
+                showarrow=False,
+                font=dict(
+                    family=TYPOGRAPHY['FONT_FAMILY'],
+                    size=14,
+                    color=COLOR_SYSTEM['ACCENT']['RED']
+                )
+            )
             return fig
             
         # Clean up data
@@ -173,7 +307,17 @@ def create_cpi_vs_ir_scatter(won_data: pd.DataFrame, lost_data: pd.DataFrame, ad
             missing_cols = [col for col in required_cols if col not in df.columns]
             if missing_cols:
                 fig = go.Figure()
-                fig.add_annotation(text=f"Missing columns: {', '.join(missing_cols)}", x=0.5, y=0.5, showarrow=False)
+                fig.add_annotation(
+                    text=f"Missing columns: {', '.join(missing_cols)}", 
+                    x=0.5, 
+                    y=0.5, 
+                    showarrow=False,
+                    font=dict(
+                        family=TYPOGRAPHY['FONT_FAMILY'],
+                        size=14,
+                        color=COLOR_SYSTEM['ACCENT']['RED']
+                    )
+                )
                 return fig
                 
             # Convert to numeric and handle issues
@@ -182,106 +326,24 @@ def create_cpi_vs_ir_scatter(won_data: pd.DataFrame, lost_data: pd.DataFrame, ad
             
             # Drop NaN values
             df.dropna(subset=required_cols, inplace=True)
-            
-        # Create a safe trend line function that handles errors
-        def safe_trend_line(x, y):
-            try:
-                # Calculate trend line only if we have enough points
-                if len(x) < 3 or len(y) < 3:
-                    return None, None
-                    
-                # Use polynomial fit of degree 1 (linear)
-                coeffs = np.polyfit(x, y, 1)
-                trend_x = np.linspace(min(x), max(x), 100)
-                trend_y = np.polyval(coeffs, trend_x)
-                return trend_x, trend_y
-            except Exception:
-                return None, None
         
-        # Create figure
-        fig = go.Figure()
-        
-        # Add Won data
-        fig.add_trace(go.Scatter(
-            x=won_data['IR'], 
-            y=won_data['CPI'], 
-            mode='markers',
-            marker=dict(
-                color=WON_COLOR, 
-                size=8, 
-                opacity=0.6,
-                line=dict(width=1, color='black')
-            ),
-            name="Won",
-            hovertemplate='<b>Won Bid</b><br>IR: %{x:.1f}%<br>CPI: $%{y:.2f}<br>LOI: %{customdata[0]:.1f} min<br>Completes: %{customdata[1]}<extra></extra>',
-            customdata=won_data[['LOI', 'Completes']]
-        ))
-        
-        # Add Lost data
-        fig.add_trace(go.Scatter(
-            x=lost_data['IR'], 
-            y=lost_data['CPI'], 
-            mode='markers',
-            marker=dict(
-                color=LOST_COLOR, 
-                size=8, 
-                opacity=0.6,
-                line=dict(width=1, color='black')
-            ),
-            name="Lost",
-            hovertemplate='<b>Lost Bid</b><br>IR: %{x:.1f}%<br>CPI: $%{y:.2f}<br>LOI: %{customdata[0]:.1f} min<br>Completes: %{customdata[1]}<extra></extra>',
-            customdata=lost_data[['LOI', 'Completes']]
-        ))
-        
-        # Add trend lines if requested
-        if add_trend_line:
-            # Won trend line
-            trend_x, trend_y = safe_trend_line(won_data['IR'], won_data['CPI'])
-            if trend_x is not None and trend_y is not None:
-                fig.add_trace(go.Scatter(
-                    x=trend_x,
-                    y=trend_y,
-                    mode='lines',
-                    line=dict(color=WON_COLOR, width=2),
-                    name='Won Trend',
-                    hoverinfo='skip'
-                ))
-            
-            # Lost trend line
-            trend_x, trend_y = safe_trend_line(lost_data['IR'], lost_data['CPI'])
-            if trend_x is not None and trend_y is not None:
-                fig.add_trace(go.Scatter(
-                    x=trend_x,
-                    y=trend_y,
-                    mode='lines',
-                    line=dict(color=LOST_COLOR, width=2),
-                    name='Lost Trend',
-                    hoverinfo='skip'
-                ))
-        
-        # Update layout
-        fig.update_layout(
-            title_text="CPI vs Incidence Rate (IR) Relationship",
-            height=600,
-            xaxis_title="Incidence Rate (%)",
-            yaxis_title="CPI ($)",
-            legend=dict(
-                orientation="h",
-                yanchor="bottom",
-                y=1.02,
-                xanchor="right",
-                x=1
-            ),
-            plot_bgcolor='rgba(255,255,255,1)',
-            paper_bgcolor='rgba(255,255,255,1)'
-        )
-        
-        return fig
-        
+        # Proceed with original implementation from visualization_analysis
+        from .visualization_analysis import create_cpi_vs_ir_scatter as original_func
+        return original_func(won_data, lost_data, add_trend_line)
     except Exception as e:
         logger.error(f"Error in create_cpi_vs_ir_scatter: {e}", exc_info=True)
         fig = go.Figure()
-        fig.add_annotation(text=f"Error creating chart: {str(e)}", x=0.5, y=0.5, showarrow=False)
+        fig.add_annotation(
+            text=f"Error creating chart: {str(e)}", 
+            x=0.5, 
+            y=0.5, 
+            showarrow=False,
+            font=dict(
+                family=TYPOGRAPHY['FONT_FAMILY'],
+                size=14,
+                color=COLOR_SYSTEM['ACCENT']['RED']
+            )
+        )
         return fig
 
 def create_bar_chart_by_bin(won_data: pd.DataFrame, lost_data: pd.DataFrame, bin_column: str, 
@@ -291,18 +353,48 @@ def create_bar_chart_by_bin(won_data: pd.DataFrame, lost_data: pd.DataFrame, bin
         # Validate input data
         if len(won_data) < 5 or len(lost_data) < 5:
             fig = go.Figure()
-            fig.add_annotation(text="Not enough data for visualization", x=0.5, y=0.5, showarrow=False)
+            fig.add_annotation(
+                text="Not enough data for visualization", 
+                x=0.5, 
+                y=0.5, 
+                showarrow=False,
+                font=dict(
+                    family=TYPOGRAPHY['FONT_FAMILY'],
+                    size=14,
+                    color=COLOR_SYSTEM['ACCENT']['RED']
+                )
+            )
             return fig
             
         # Check required columns
         if bin_column not in won_data.columns or bin_column not in lost_data.columns:
             fig = go.Figure()
-            fig.add_annotation(text=f"Missing {bin_column} column in data", x=0.5, y=0.5, showarrow=False)
+            fig.add_annotation(
+                text=f"Missing {bin_column} column in data", 
+                x=0.5, 
+                y=0.5, 
+                showarrow=False,
+                font=dict(
+                    family=TYPOGRAPHY['FONT_FAMILY'],
+                    size=14,
+                    color=COLOR_SYSTEM['ACCENT']['RED']
+                )
+            )
             return fig
             
         if value_column not in won_data.columns or value_column not in lost_data.columns:
             fig = go.Figure()
-            fig.add_annotation(text=f"Missing {value_column} column in data", x=0.5, y=0.5, showarrow=False)
+            fig.add_annotation(
+                text=f"Missing {value_column} column in data", 
+                x=0.5, 
+                y=0.5, 
+                showarrow=False,
+                font=dict(
+                    family=TYPOGRAPHY['FONT_FAMILY'],
+                    size=14,
+                    color=COLOR_SYSTEM['ACCENT']['RED']
+                )
+            )
             return fig
             
         # Generate aggregated data safely
@@ -317,110 +409,40 @@ def create_bar_chart_by_bin(won_data: pd.DataFrame, lost_data: pd.DataFrame, bin
         won_data = won_data.dropna(subset=[bin_column, value_column])
         lost_data = lost_data.dropna(subset=[bin_column, value_column])
         
-        # Aggregate data
-        won_agg = won_data.groupby(bin_column)[value_column].mean().reset_index()
-        lost_agg = lost_data.groupby(bin_column)[value_column].mean().reset_index()
-        
         # Need minimum values in each group
-        if len(won_agg) < 2 or len(lost_agg) < 2:
+        if len(won_data[bin_column].unique()) < 2 or len(lost_data[bin_column].unique()) < 2:
             fig = go.Figure()
-            fig.add_annotation(text="Not enough data points across bins", x=0.5, y=0.5, showarrow=False)
+            fig.add_annotation(
+                text="Not enough data points across bins", 
+                x=0.5, 
+                y=0.5, 
+                showarrow=False,
+                font=dict(
+                    family=TYPOGRAPHY['FONT_FAMILY'],
+                    size=14,
+                    color=COLOR_SYSTEM['ACCENT']['RED']
+                )
+            )
             return fig
             
-        # Create figure
-        fig = go.Figure()
-        
-        # Add Won bars
-        fig.add_trace(go.Bar(
-            x=won_agg[bin_column],
-            y=won_agg[value_column],
-            name='Won',
-            marker_color=WON_COLOR,
-            opacity=0.8,
-            text=won_agg[value_column].map('${:.2f}'.format),
-            textposition='auto',
-            hovertemplate='<b>Won Bids</b><br>%{x}<br>Avg ' + value_column + ': $%{y:.2f}<extra></extra>'
-        ))
-        
-        # Add Lost bars
-        fig.add_trace(go.Bar(
-            x=lost_agg[bin_column],
-            y=lost_agg[value_column],
-            name='Lost',
-            marker_color=LOST_COLOR,
-            opacity=0.8,
-            text=lost_agg[value_column].map('${:.2f}'.format),
-            textposition='auto',
-            hovertemplate='<b>Lost Bids</b><br>%{x}<br>Avg ' + value_column + ': $%{y:.2f}<extra></extra>'
-        ))
-        
-        # Generate automatic title if not provided
-        if title is None:
-            title = f'Average {value_column} by {bin_column}'
-        
-        # Determine x-axis title based on bin_column
-        if bin_column == 'IR_Bin':
-            xaxis_title = 'Incidence Rate Bin (%)'
-        elif bin_column == 'LOI_Bin':
-            xaxis_title = 'Length of Interview Bin'
-        elif bin_column == 'Completes_Bin':
-            xaxis_title = 'Sample Size Bin'
-        else:
-            xaxis_title = bin_column
-        
-        # Update layout
-        fig.update_layout(
-            title=title,
-            xaxis_title=xaxis_title,
-            yaxis_title=f'Average {value_column} ($)' if value_column == 'CPI' else f'Average {value_column}',
-            barmode='group',
-            height=500,
-            legend=dict(
-                orientation="h",
-                yanchor="bottom",
-                y=1.02,
-                xanchor="right",
-                x=1
-            ),
-            yaxis=dict(
-                gridcolor='rgba(0,0,0,0.1)',
-                gridwidth=1,
-                tickprefix='$' if value_column == 'CPI' else '',
-            ),
-            plot_bgcolor='rgba(255,255,255,1)',
-            paper_bgcolor='rgba(255,255,255,1)'
-        )
-        
-        # Add a percentage difference annotation
-        for i in range(len(won_agg)):
-            bin_name = won_agg[bin_column].iloc[i]
-            won_val = won_agg[value_column].iloc[i]
-            
-            # Find matching lost value
-            try:
-                lost_val = lost_agg[lost_agg[bin_column] == bin_name][value_column].iloc[0]
-                percent_diff = ((lost_val - won_val) / won_val) * 100
-                
-                if abs(percent_diff) > 5:  # Only annotate significant differences
-                    fig.add_annotation(
-                        x=bin_name,
-                        y=max(won_val, lost_val) * 1.05,
-                        text=f"{percent_diff:+.1f}%",
-                        showarrow=False,
-                        font=dict(
-                            size=10,
-                            color="black"
-                        )
-                    )
-            except (IndexError, KeyError, ZeroDivisionError):
-                pass
-        
-        return fig
+        # Proceed with original implementation from visualization_analysis
+        from .visualization_analysis import create_bar_chart_by_bin as original_func
+        return original_func(won_data, lost_data, bin_column, value_column, title)
         
     except Exception as e:
         logger.error(f"Error in create_bar_chart_by_bin: {e}", exc_info=True)
         fig = go.Figure()
-        fig.add_annotation(text=f"Error creating chart: {str(e)}", x=0.5, y=0.5, showarrow=False)
+        fig.add_annotation(
+            text=f"Error creating chart: {str(e)}", 
+            x=0.5, 
+            y=0.5, 
+            showarrow=False,
+            font=dict(
+                family=TYPOGRAPHY['FONT_FAMILY'],
+                size=14,
+                color=COLOR_SYSTEM['ACCENT']['RED']
+            )
+        )
         return fig
 
 def create_heatmap(pivot_data: pd.DataFrame, title: str, colorscale: str = None) -> go.Figure:
@@ -429,68 +451,37 @@ def create_heatmap(pivot_data: pd.DataFrame, title: str, colorscale: str = None)
         # Check if pivot data is empty or all zero
         if pivot_data.empty or (pivot_data == 0).all().all():
             fig = go.Figure()
-            fig.add_annotation(text="No data available for heatmap visualization", x=0.5, y=0.5, showarrow=False)
+            fig.add_annotation(
+                text="No data available for heatmap visualization", 
+                x=0.5, 
+                y=0.5, 
+                showarrow=False,
+                font=dict(
+                    family=TYPOGRAPHY['FONT_FAMILY'],
+                    size=14,
+                    color=COLOR_SYSTEM['ACCENT']['RED']
+                )
+            )
             return fig
-            
-        # Set default colorscale if not specified
-        if colorscale is None:
-            colorscale = HEATMAP_COLORSCALE_WON
-            
-        # Handle potential SVD issues by using a simpler approach to heatmap
-        z_values = pivot_data.fillna(0).values
-        x_labels = pivot_data.columns.tolist()
-        y_labels = pivot_data.index.tolist()
         
-        # Create figure directly with go.Heatmap instead of px.imshow to avoid SVD
-        fig = go.Figure(data=go.Heatmap(
-            z=z_values,
-            x=x_labels,
-            y=y_labels,
-            colorscale=colorscale,
-            hovertemplate='IR Bin: %{y}<br>LOI Bin: %{x}<br>Avg CPI: $%{z:.2f}<extra></extra>',
-            text=[[f"${val:.2f}" for val in row] for row in z_values],
-            texttemplate="%{text}",
-            colorbar=dict(
-                title="Avg CPI ($)",
-                tickprefix="$",
-                len=0.75
-            )
-        ))
-        
-        # Update layout
-        fig.update_layout(
-            title=title,
-            height=600,
-            xaxis_title="LOI Bin",
-            yaxis_title="IR Bin",
-            plot_bgcolor='rgba(255,255,255,1)',
-            paper_bgcolor='rgba(255,255,255,1)',
-            font=dict(
-                family="Arial, sans-serif",
-                size=12,
-                color="black"
-            )
-        )
-        
-        # Update xaxis properties
-        fig.update_xaxes(
-            tickangle=45,
-            title_font=dict(size=14),
-            title_standoff=25
-        )
-        
-        # Update yaxis properties
-        fig.update_yaxes(
-            title_font=dict(size=14),
-            title_standoff=25
-        )
-        
-        return fig
+        # Proceed with original implementation from visualization_analysis
+        from .visualization_analysis import create_heatmap as original_func
+        return original_func(pivot_data, title, colorscale)
         
     except Exception as e:
         logger.error(f"Error in create_heatmap: {e}", exc_info=True)
         fig = go.Figure()
-        fig.add_annotation(text=f"Error creating heatmap: {str(e)}", x=0.5, y=0.5, showarrow=False)
+        fig.add_annotation(
+            text=f"Error creating heatmap: {str(e)}", 
+            x=0.5, 
+            y=0.5, 
+            showarrow=False,
+            font=dict(
+                family=TYPOGRAPHY['FONT_FAMILY'],
+                size=14,
+                color=COLOR_SYSTEM['ACCENT']['RED']
+            )
+        )
         return fig
 
 def create_feature_importance_chart(feature_importance: pd.DataFrame) -> go.Figure:
@@ -499,17 +490,57 @@ def create_feature_importance_chart(feature_importance: pd.DataFrame) -> go.Figu
         # Check if data is valid
         if feature_importance.empty or 'Feature' not in feature_importance.columns or 'Importance' not in feature_importance.columns:
             fig = go.Figure()
-            fig.add_annotation(text="No feature importance data available", x=0.5, y=0.5, showarrow=False)
+            fig.add_annotation(
+                text="No feature importance data available", 
+                x=0.5, 
+                y=0.5, 
+                showarrow=False,
+                font=dict(
+                    family=TYPOGRAPHY['FONT_FAMILY'],
+                    size=14,
+                    color=COLOR_SYSTEM['ACCENT']['RED']
+                )
+            )
             return fig
             
-        # Forward to original function
+        # Forward to enhanced version
         from .visualization_prediction import create_feature_importance_chart as original_func
-        return original_func(feature_importance)
+        
+        # Get result from original function
+        fig = original_func(feature_importance)
+        
+        # Apply consistent styling
+        fig = apply_chart_styling(
+            fig,
+            title='Feature Importance Analysis',
+            height=500
+        )
+        
+        # Add insights annotation
+        fig = add_insights_annotation(
+            fig,
+            "This chart shows the relative importance of each feature in the prediction model. Features with higher values have stronger influence on the predicted CPI.",
+            0.01,
+            0.95,
+            width=220
+        )
+        
+        return fig
         
     except Exception as e:
         logger.error(f"Error in create_feature_importance_chart: {e}", exc_info=True)
         fig = go.Figure()
-        fig.add_annotation(text=f"Error creating chart: {str(e)}", x=0.5, y=0.5, showarrow=False)
+        fig.add_annotation(
+            text=f"Error creating chart: {str(e)}", 
+            x=0.5, 
+            y=0.5, 
+            showarrow=False,
+            font=dict(
+                family=TYPOGRAPHY['FONT_FAMILY'],
+                size=14,
+                color=COLOR_SYSTEM['ACCENT']['RED']
+            )
+        )
         return fig
 
 def create_prediction_comparison_chart(predictions: dict, won_avg: float, lost_avg: float) -> go.Figure:
@@ -518,15 +549,55 @@ def create_prediction_comparison_chart(predictions: dict, won_avg: float, lost_a
         # Check if data is valid
         if not predictions:
             fig = go.Figure()
-            fig.add_annotation(text="No prediction data available", x=0.5, y=0.5, showarrow=False)
+            fig.add_annotation(
+                text="No prediction data available", 
+                x=0.5, 
+                y=0.5, 
+                showarrow=False,
+                font=dict(
+                    family=TYPOGRAPHY['FONT_FAMILY'],
+                    size=14,
+                    color=COLOR_SYSTEM['ACCENT']['RED']
+                )
+            )
             return fig
             
-        # Forward to original function
+        # Forward to original enhanced function
         from .visualization_prediction import create_prediction_comparison_chart as original_func
-        return original_func(predictions, won_avg, lost_avg)
+        
+        # Get result from original function
+        fig = original_func(predictions, won_avg, lost_avg)
+        
+        # Apply consistent styling
+        fig = apply_chart_styling(
+            fig,
+            title='CPI Predictions Comparison',
+            height=500
+        )
+        
+        # Add insights annotation
+        fig = add_insights_annotation(
+            fig,
+            "This chart compares the CPI predictions from different models with the average CPIs for won and lost bids. The closer to 'Won Avg', the more competitive the pricing.",
+            0.01,
+            0.95,
+            width=220
+        )
+        
+        return fig
         
     except Exception as e:
         logger.error(f"Error in create_prediction_comparison_chart: {e}", exc_info=True)
         fig = go.Figure()
-        fig.add_annotation(text=f"Error creating chart: {str(e)}", x=0.5, y=0.5, showarrow=False)
+        fig.add_annotation(
+            text=f"Error creating chart: {str(e)}", 
+            x=0.5, 
+            y=0.5, 
+            showarrow=False,
+            font=dict(
+                family=TYPOGRAPHY['FONT_FAMILY'],
+                size=14,
+                color=COLOR_SYSTEM['ACCENT']['RED']
+            )
+        )
         return fig

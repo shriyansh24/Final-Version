@@ -11,25 +11,26 @@ from plotly.subplots import make_subplots
 import logging
 from typing import Dict, List, Optional, Union, Tuple
 
+# Import configuration and UI components
+from config import COLOR_SYSTEM, TYPOGRAPHY
+from ui_components import apply_chart_styling, add_insights_annotation
+
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Define color-blind friendly palettes
-# Using a blue-orange palette which is more distinguishable for most color vision deficiencies
+# Define constants for backward compatibility
+WON_COLOR = COLOR_SYSTEM['CHARTS']['WON']
+LOST_COLOR = COLOR_SYSTEM['CHARTS']['LOST']
+HEATMAP_COLORSCALE_WON = 'Viridis'
+HEATMAP_COLORSCALE_LOST = 'Plasma'
 COLORBLIND_PALETTE = {
-    'qualitative': ['#3288bd', '#d53e4f', '#66c2a5', '#fee08b', '#e6f598', '#abdda4'],
+    'qualitative': [COLOR_SYSTEM['ACCENT']['BLUE'], COLOR_SYSTEM['ACCENT']['RED'], 
+                    COLOR_SYSTEM['ACCENT']['GREEN'], COLOR_SYSTEM['ACCENT']['YELLOW'], 
+                    COLOR_SYSTEM['ACCENT']['PURPLE'], COLOR_SYSTEM['ACCENT']['ORANGE']],
     'sequential': ['#f7fbff', '#deebf7', '#c6dbef', '#9ecae1', '#6baed6', '#4292c6', '#2171b5', '#084594'],
     'diverging': ['#d73027', '#fc8d59', '#fee090', '#e0f3f8', '#91bfdb', '#4575b4']
 }
-
-# Colors for Won vs Lost (blue-orange contrast)
-WON_COLOR = '#3288bd'  # Blue
-LOST_COLOR = '#f58518'  # Orange
-
-# Color scales for heatmaps (color-blind friendly)
-HEATMAP_COLORSCALE_WON = 'Viridis'  # Good color-blind friendly option for sequential data
-HEATMAP_COLORSCALE_LOST = 'Plasma'  # Another good color-blind friendly option
 
 def create_type_distribution_chart(df: pd.DataFrame) -> go.Figure:
     """
@@ -47,7 +48,7 @@ def create_type_distribution_chart(df: pd.DataFrame) -> go.Figure:
             names='Type', 
             title='Distribution of Won vs Lost Bids',
             color='Type',
-            color_discrete_map={'Won': WON_COLOR, 'Lost': LOST_COLOR},
+            color_discrete_map={'Won': COLOR_SYSTEM['CHARTS']['WON'], 'Lost': COLOR_SYSTEM['CHARTS']['LOST']},
             hole=0.4
         )
         
@@ -56,15 +57,6 @@ def create_type_distribution_chart(df: pd.DataFrame) -> go.Figure:
             textposition='inside', 
             textinfo='percent+label',
             hovertemplate='<b>%{label}</b><br>Count: %{value}<br>Percentage: %{percent}'
-        )
-        
-        # Add a more descriptive hover tooltip
-        fig.update_layout(
-            hoverlabel=dict(
-                bgcolor="white",
-                font_size=12,
-                font_family="Arial"
-            )
         )
         
         # Add annotations for accessibility
@@ -85,6 +77,14 @@ def create_type_distribution_chart(df: pd.DataFrame) -> go.Figure:
                     showarrow=False
                 )
             ]
+        )
+        
+        # Apply consistent styling
+        fig = apply_chart_styling(
+            fig,
+            title="Distribution of Won vs Lost Bids",
+            height=400,
+            show_legend=True
         )
         
         return fig
@@ -112,7 +112,7 @@ def create_cpi_distribution_boxplot(won_data: pd.DataFrame, lost_data: pd.DataFr
         fig.add_trace(go.Box(
             y=won_data['CPI'],
             name='Won',
-            marker_color=WON_COLOR,
+            marker_color=COLOR_SYSTEM['CHARTS']['WON'],
             boxmean=True,  # Show mean as a dashed line
             line=dict(width=2),
             jitter=0.3,  # Add some jitter to points for better visualization
@@ -124,7 +124,7 @@ def create_cpi_distribution_boxplot(won_data: pd.DataFrame, lost_data: pd.DataFr
         fig.add_trace(go.Box(
             y=lost_data['CPI'],
             name='Lost',
-            marker_color=LOST_COLOR,
+            marker_color=COLOR_SYSTEM['CHARTS']['LOST'],
             boxmean=True,  # Show mean as a dashed line
             line=dict(width=2),
             jitter=0.3,  # Add some jitter to points for better visualization
@@ -142,7 +142,12 @@ def create_cpi_distribution_boxplot(won_data: pd.DataFrame, lost_data: pd.DataFr
             arrowsize=1,
             arrowwidth=1,
             ax=50,
-            ay=-30
+            ay=-30,
+            font=dict(
+                family=TYPOGRAPHY['FONT_FAMILY'],
+                size=11,
+                color=COLOR_SYSTEM['PRIMARY']['MAIN']
+            ),
         )
         
         fig.add_annotation(
@@ -154,41 +159,34 @@ def create_cpi_distribution_boxplot(won_data: pd.DataFrame, lost_data: pd.DataFr
             arrowsize=1,
             arrowwidth=1,
             ax=50,
-            ay=-30
+            ay=-30,
+            font=dict(
+                family=TYPOGRAPHY['FONT_FAMILY'],
+                size=11,
+                color=COLOR_SYSTEM['PRIMARY']['MAIN']
+            ),
         )
         
-        # Update layout
-        fig.update_layout(
+        # Apply consistent styling
+        fig = apply_chart_styling(
+            fig,
             title='CPI Distribution: Won vs Lost',
+            height=500
+        )
+        
+        # Update axes with more details
+        fig.update_layout(
             yaxis_title='CPI ($)',
             xaxis_title='Bid Type',
-            showlegend=True,
-            legend=dict(
-                orientation="h",
-                yanchor="bottom",
-                y=1.02,
-                xanchor="right",
-                x=1
-            ),
-            # Add grid for easier reading of values
-            yaxis=dict(
-                gridcolor='rgba(0,0,0,0.1)',
-                gridwidth=1
-            ),
-            # Add hover information template
-            hoverlabel=dict(
-                bgcolor="white",
-                font_size=12,
-                font_family="Arial"
-            ),
-            # Improved accessibility with contrasting colors
-            plot_bgcolor='rgba(255,255,255,1)',
-            paper_bgcolor='rgba(255,255,255,1)',
-            font=dict(
-                family="Arial, sans-serif",
-                size=12,
-                color="black"
-            )
+        )
+        
+        # Add insights annotation
+        fig = add_insights_annotation(
+            fig,
+            text="This boxplot shows the distribution of CPI values for Won vs Lost bids. The boxes represent the interquartile range (IQR), the line inside the box is the median, and the dashed line is the mean.",
+            x_pos=0.01,
+            y_pos=0.95,
+            width=220
         )
         
         return fig
@@ -223,7 +221,7 @@ def create_cpi_histogram_comparison(won_data: pd.DataFrame, lost_data: pd.DataFr
             go.Histogram(
                 x=won_data['CPI'], 
                 name="Won", 
-                marker_color=WON_COLOR, 
+                marker_color=COLOR_SYSTEM['CHARTS']['WON'], 
                 opacity=0.7,
                 histnorm='percent',  # Show as percentage for easier comparison
                 hovertemplate='CPI: $%{x:.2f}<br>Percentage: %{y:.1f}%<extra></extra>'
@@ -235,7 +233,7 @@ def create_cpi_histogram_comparison(won_data: pd.DataFrame, lost_data: pd.DataFr
             go.Histogram(
                 x=lost_data['CPI'], 
                 name="Lost", 
-                marker_color=LOST_COLOR, 
+                marker_color=COLOR_SYSTEM['CHARTS']['LOST'], 
                 opacity=0.7,
                 histnorm='percent',  # Show as percentage for easier comparison
                 hovertemplate='CPI: $%{x:.2f}<br>Percentage: %{y:.1f}%<extra></extra>'
@@ -249,7 +247,7 @@ def create_cpi_histogram_comparison(won_data: pd.DataFrame, lost_data: pd.DataFr
             x0=won_data['CPI'].mean(), x1=won_data['CPI'].mean(),
             y0=0, y1=1,
             yref="paper",
-            line=dict(color="black", width=2, dash="dash"),
+            line=dict(color=COLOR_SYSTEM['PRIMARY']['MAIN'], width=2, dash="dash"),
             row=1, col=1
         )
         
@@ -258,7 +256,7 @@ def create_cpi_histogram_comparison(won_data: pd.DataFrame, lost_data: pd.DataFr
             x0=lost_data['CPI'].mean(), x1=lost_data['CPI'].mean(),
             y0=0, y1=1,
             yref="paper",
-            line=dict(color="black", width=2, dash="dash"),
+            line=dict(color=COLOR_SYSTEM['PRIMARY']['MAIN'], width=2, dash="dash"),
             row=1, col=2
         )
         
@@ -270,6 +268,11 @@ def create_cpi_histogram_comparison(won_data: pd.DataFrame, lost_data: pd.DataFr
             showarrow=True,
             arrowhead=2,
             yref="paper",
+            font=dict(
+                family=TYPOGRAPHY['FONT_FAMILY'],
+                size=11,
+                color=COLOR_SYSTEM['PRIMARY']['MAIN']
+            ),
             row=1, col=1
         )
         
@@ -280,22 +283,27 @@ def create_cpi_histogram_comparison(won_data: pd.DataFrame, lost_data: pd.DataFr
             showarrow=True,
             arrowhead=2,
             yref="paper",
+            font=dict(
+                family=TYPOGRAPHY['FONT_FAMILY'],
+                size=11,
+                color=COLOR_SYSTEM['PRIMARY']['MAIN']
+            ),
             row=1, col=2
         )
         
-        # Update layout
+        # Apply consistent styling
         fig.update_layout(
-            height=500,
-            showlegend=False,
             title_text="CPI Distribution Comparison (Won vs Lost)",
-            # Improved accessibility with contrasting colors
-            plot_bgcolor='rgba(255,255,255,1)',
-            paper_bgcolor='rgba(255,255,255,1)',
+            height=500,
             font=dict(
-                family="Arial, sans-serif",
+                family=TYPOGRAPHY['FONT_FAMILY'],
                 size=12,
-                color="black"
-            )
+                color=COLOR_SYSTEM['PRIMARY']['MAIN']
+            ),
+            plot_bgcolor=COLOR_SYSTEM['NEUTRAL']['WHITE'],
+            paper_bgcolor=COLOR_SYSTEM['NEUTRAL']['WHITE'],
+            margin=dict(l=10, r=10, t=50, b=10),
+            showlegend=False,
         )
         
         fig.update_xaxes(title_text="CPI ($)")
@@ -322,9 +330,11 @@ def create_cpi_efficiency_chart(won_data: pd.DataFrame, lost_data: pd.DataFrame)
     try:
         # Calculate CPI efficiency metric if not already present
         if 'CPI_Efficiency' not in won_data.columns:
+            won_data = won_data.copy()
             won_data['CPI_Efficiency'] = (won_data['IR'] / 100) * (1 / won_data['LOI']) * won_data['Completes']
         
         if 'CPI_Efficiency' not in lost_data.columns:
+            lost_data = lost_data.copy()
             lost_data['CPI_Efficiency'] = (lost_data['IR'] / 100) * (1 / lost_data['LOI']) * lost_data['Completes']
         
         # Create figure
@@ -336,10 +346,10 @@ def create_cpi_efficiency_chart(won_data: pd.DataFrame, lost_data: pd.DataFrame)
             y=won_data['CPI'],
             mode='markers',
             marker=dict(
-                color=WON_COLOR,
+                color=COLOR_SYSTEM['CHARTS']['WON'],
                 size=10,
-                opacity=0.6,
-                line=dict(width=1, color='black')
+                opacity=0.7,
+                line=dict(width=1, color=COLOR_SYSTEM['NEUTRAL']['WHITE'])
             ),
             name='Won',
             hovertemplate='<b>Won Bid</b><br>Efficiency: %{x:.1f}<br>CPI: $%{y:.2f}<br>IR: %{customdata[0]:.1f}%<br>LOI: %{customdata[1]:.1f} min<br>Completes: %{customdata[2]}<extra></extra>',
@@ -352,10 +362,10 @@ def create_cpi_efficiency_chart(won_data: pd.DataFrame, lost_data: pd.DataFrame)
             y=lost_data['CPI'],
             mode='markers',
             marker=dict(
-                color=LOST_COLOR,
+                color=COLOR_SYSTEM['CHARTS']['LOST'],
                 size=10,
-                opacity=0.6,
-                line=dict(width=1, color='black')
+                opacity=0.7,
+                line=dict(width=1, color=COLOR_SYSTEM['NEUTRAL']['WHITE'])
             ),
             name='Lost',
             hovertemplate='<b>Lost Bid</b><br>Efficiency: %{x:.1f}<br>CPI: $%{y:.2f}<br>IR: %{customdata[0]:.1f}%<br>LOI: %{customdata[1]:.1f} min<br>Completes: %{customdata[2]}<extra></extra>',
@@ -376,7 +386,7 @@ def create_cpi_efficiency_chart(won_data: pd.DataFrame, lost_data: pd.DataFrame)
                         x=x_range,
                         y=trend_y,
                         mode='lines',
-                        line=dict(color=WON_COLOR, width=2),
+                        line=dict(color=COLOR_SYSTEM['CHARTS']['WON'], width=2),
                         name='Won Trend',
                         hoverinfo='skip'
                     ))
@@ -398,7 +408,7 @@ def create_cpi_efficiency_chart(won_data: pd.DataFrame, lost_data: pd.DataFrame)
                         x=x_range,
                         y=trend_y,
                         mode='lines',
-                        line=dict(color=LOST_COLOR, width=2),
+                        line=dict(color=COLOR_SYSTEM['CHARTS']['LOST'], width=2),
                         name='Lost Trend',
                         hoverinfo='skip'
                     ))
@@ -407,50 +417,26 @@ def create_cpi_efficiency_chart(won_data: pd.DataFrame, lost_data: pd.DataFrame)
         except Exception as e:
             logger.warning(f"Error adding Lost trend line: {e}")
         
-        # Update layout
-        fig.update_layout(
+        # Apply consistent styling
+        fig = apply_chart_styling(
+            fig,
             title='CPI vs Efficiency Metric',
-            xaxis_title='Efficiency Metric ((IR/100) × (1/LOI) × Completes)',
-            yaxis_title='CPI ($)',
-            height=600,
-            legend=dict(
-                orientation="h",
-                yanchor="bottom",
-                y=1.02,
-                xanchor="right",
-                x=1
-            ),
-            # Improved accessibility
-            plot_bgcolor='rgba(255,255,255,1)',
-            paper_bgcolor='rgba(255,255,255,1)',
-            font=dict(
-                family="Arial, sans-serif",
-                size=12,
-                color="black"
-            ),
-            yaxis=dict(
-                gridcolor='rgba(0,0,0,0.1)',
-                gridwidth=1,
-                tickprefix='',  # Add dollar sign to y-axis
-            ),
-            xaxis=dict(
-                gridcolor='rgba(0,0,0,0.1)',
-                gridwidth=1
-            )
+            height=600
         )
         
-        # Add annotation explaining the efficiency metric
-        fig.add_annotation(
-            x=0.02,
-            y=0.95,
-            xref="paper",
-            yref="paper",
-            text="Efficiency Metric combines IR, LOI, and<br>Sample Size into a single value.<br>Higher values indicate more<br>efficient survey parameters.",
-            showarrow=False,
-            align="left",
-            bgcolor="rgba(255, 255, 255, 0.8)",
-            bordercolor="black",
-            borderwidth=1
+        # Update axis titles with more descriptive labels
+        fig.update_layout(
+            xaxis_title='Efficiency Metric ((IR/100) × (1/LOI) × Completes)',
+            yaxis_title='CPI ($)',
+        )
+        
+        # Add insights annotation
+        fig = add_insights_annotation(
+            fig,
+            "Efficiency Metric combines IR, LOI, and Sample Size into a single value. Higher values indicate more efficient survey parameters.",
+            0.01,
+            0.95,
+            width=220
         )
         
         return fig

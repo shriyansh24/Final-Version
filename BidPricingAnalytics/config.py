@@ -21,6 +21,83 @@ APP_ICON = "📊"
 APP_LAYOUT = "wide"
 SIDEBAR_STATE = "expanded"
 
+# Comprehensive color system
+COLOR_SYSTEM = {
+    # Primary palette
+    'PRIMARY': {
+        'MAIN': '#2C3E50',       # Dark blue-slate - headers, primary elements
+        'LIGHT': '#34495E',      # Lighter slate - secondary elements
+        'DARK': '#1A252F',       # Darker slate - footer, emphasis
+        'CONTRAST': '#ECF0F1'    # Off-white - text on dark backgrounds
+    },
+    
+    # Accent colors
+    'ACCENT': {
+        'BLUE': '#3498DB',       # Bright blue - won bids, primary accent
+        'ORANGE': '#E67E22',     # Orange - lost bids
+        'GREEN': '#2ECC71',      # Green - positive indicators
+        'RED': '#E74C3C',        # Red - negative indicators
+        'PURPLE': '#9B59B6',     # Purple - predictions
+        'YELLOW': '#F1C40F'      # Yellow - warnings, highlights
+    },
+    
+    # Neutral tones
+    'NEUTRAL': {
+        'WHITE': '#FFFFFF',
+        'LIGHTEST': '#F8F9FA',
+        'LIGHTER': '#E9ECEF',
+        'LIGHT': '#DEE2E6',
+        'MEDIUM': '#CED4DA',
+        'DARK': '#ADB5BD',
+        'DARKER': '#6C757D',
+        'DARKEST': '#343A40',
+        'BLACK': '#212529'
+    },
+    
+    # Semantic colors (for specific meanings)
+    'SEMANTIC': {
+        'SUCCESS': '#27AE60',
+        'WARNING': '#F39C12',
+        'ERROR': '#C0392B',
+        'INFO': '#2980B9'
+    },
+    
+    # Chart-specific colors 
+    'CHARTS': {
+        'WON': '#3498DB',        # Blue
+        'LOST': '#E67E22',       # Orange
+        'WON_TRANS': 'rgba(52, 152, 219, 0.7)',
+        'LOST_TRANS': 'rgba(230, 126, 34, 0.7)',
+        'GRADIENT_1': '#2980B9',
+        'GRADIENT_2': '#6DD5FA',
+        'GRADIENT_3': '#FFFFFF'
+    },
+    
+    # Background colors
+    'BACKGROUND': {
+        'MAIN': '#F8F9FA',       # Main background
+        'CARD': '#FFFFFF',       # Card background
+        'DARK': '#2C3E50',       # Dark sections
+        'ALT': '#EBF5FB'         # Alternate background
+    }
+}
+
+# Typography
+TYPOGRAPHY = {
+    'FONT_FAMILY': '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+    'HEADING': {
+        'H1': {'size': '2rem', 'weight': '700', 'height': '1.2'},
+        'H2': {'size': '1.5rem', 'weight': '600', 'height': '1.3'},
+        'H3': {'size': '1.17rem', 'weight': '600', 'height': '1.4'},
+        'H4': {'size': '1rem', 'weight': '600', 'height': '1.5'}
+    },
+    'BODY': {
+        'LARGE': {'size': '1.1rem', 'weight': '400', 'height': '1.5'},
+        'NORMAL': {'size': '1rem', 'weight': '400', 'height': '1.5'},
+        'SMALL': {'size': '0.875rem', 'weight': '400', 'height': '1.4'}
+    }
+}
+
 # Data binning configurations
 IR_BINS = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
 IR_BIN_LABELS = ['0-10', '10-20', '20-30', '30-40', '40-50', 
@@ -35,16 +112,15 @@ COMPLETES_BIN_LABELS = ['Small (1-100)', 'Medium (101-500)',
                        'Large (501-1000)', 'Very Large (1000+)']
 
 # Visualization settings
-# Color-blind friendly palettes
-COLORBLIND_PALETTE = {
-    'qualitative': ['#3288bd', '#d53e4f', '#66c2a5', '#fee08b', '#e6f598', '#abdda4'],
-    'sequential': ['#f7fbff', '#deebf7', '#c6dbef', '#9ecae1', '#6baed6', '#4292c6', '#2171b5', '#084594'],
-    'diverging': ['#d73027', '#fc8d59', '#fee090', '#e0f3f8', '#91bfdb', '#4575b4']
-}
+# For backward compatibility
+WON_COLOR = COLOR_SYSTEM['CHARTS']['WON']
+LOST_COLOR = COLOR_SYSTEM['CHARTS']['LOST']
 
-# Colors for Won vs Lost (blue-orange contrast for better color-blind accessibility)
-WON_COLOR = '#3288bd'  # Blue
-LOST_COLOR = '#f58518'  # Orange
+# Chart styling defaults
+CHART_HEIGHT = 500
+CHART_MARGIN = dict(l=10, r=10, t=50, b=10)
+CHART_BACKGROUND = COLOR_SYSTEM['NEUTRAL']['WHITE']
+CHART_GRID_COLOR = COLOR_SYSTEM['NEUTRAL']['LIGHT']
 
 # Heatmap color scales (color-blind friendly)
 HEATMAP_COLORSCALE_WON = 'Viridis'  # Good color-blind friendly option for sequential data

@@ -10,6 +10,10 @@ import plotly.graph_objects as go
 import logging
 from typing import Dict, List, Optional, Union, Tuple
 
+# Import configuration and UI components
+from config import COLOR_SYSTEM, TYPOGRAPHY
+from ui_components import apply_chart_styling, add_insights_annotation, add_data_point_annotation
+
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -19,8 +23,8 @@ try:
     from .visualization_basic import WON_COLOR, LOST_COLOR, HEATMAP_COLORSCALE_WON, HEATMAP_COLORSCALE_LOST
 except ImportError:
     # Define color constants if import fails
-    WON_COLOR = '#3288bd'  # Blue
-    LOST_COLOR = '#f58518'  # Orange
+    WON_COLOR = COLOR_SYSTEM['CHARTS']['WON']
+    LOST_COLOR = COLOR_SYSTEM['CHARTS']['LOST']
     HEATMAP_COLORSCALE_WON = 'Viridis'
     HEATMAP_COLORSCALE_LOST = 'Plasma'
 
@@ -45,10 +49,10 @@ def create_cpi_vs_ir_scatter(won_data: pd.DataFrame, lost_data: pd.DataFrame, ad
             y=won_data['CPI'], 
             mode='markers',
             marker=dict(
-                color=WON_COLOR, 
-                size=8, 
-                opacity=0.6,
-                line=dict(width=1, color='black')  # Add border for better visibility
+                color=COLOR_SYSTEM['CHARTS']['WON'], 
+                size=10, 
+                opacity=0.7,
+                line=dict(width=1, color=COLOR_SYSTEM['NEUTRAL']['WHITE'])
             ),
             name="Won",
             hovertemplate='<b>Won Bid</b><br>IR: %{x:.1f}%<br>CPI: $%{y:.2f}<br>LOI: %{customdata[0]:.1f} min<br>Completes: %{customdata[1]}<extra></extra>',
@@ -61,10 +65,10 @@ def create_cpi_vs_ir_scatter(won_data: pd.DataFrame, lost_data: pd.DataFrame, ad
             y=lost_data['CPI'], 
             mode='markers',
             marker=dict(
-                color=LOST_COLOR, 
-                size=8, 
-                opacity=0.6,
-                line=dict(width=1, color='black')  # Add border for better visibility
+                color=COLOR_SYSTEM['CHARTS']['LOST'], 
+                size=10, 
+                opacity=0.7,
+                line=dict(width=1, color=COLOR_SYSTEM['NEUTRAL']['WHITE'])
             ),
             name="Lost",
             hovertemplate='<b>Lost Bid</b><br>IR: %{x:.1f}%<br>CPI: $%{y:.2f}<br>LOI: %{customdata[0]:.1f} min<br>Completes: %{customdata[1]}<extra></extra>',
@@ -74,81 +78,136 @@ def create_cpi_vs_ir_scatter(won_data: pd.DataFrame, lost_data: pd.DataFrame, ad
         # Add trend lines
         if add_trend_line:
             # Add a trend line for Won bids
-            won_trend = go.Scatter(
-                x=won_data['IR'],
-                y=won_data['IR'].map(lambda x: 
-                    np.polyval(np.polyfit(won_data['IR'], won_data['CPI'], 1), x)
-                ),
+            x_range = np.linspace(min(won_data['IR']), max(won_data['IR']), 100)
+            coeffs = np.polyfit(won_data['IR'], won_data['CPI'], 1)
+            y_trend = np.polyval(coeffs, x_range)
+            
+            fig.add_trace(go.Scatter(
+                x=x_range,
+                y=y_trend,
                 mode='lines',
-                line=dict(color=WON_COLOR, width=2, dash='solid'),
+                line=dict(color=COLOR_SYSTEM['CHARTS']['WON'], width=2, dash='solid'),
                 name='Won Trend',
                 hoverinfo='skip'
-            )
-            fig.add_trace(won_trend)
+            ))
             
             # Add a trend line for Lost bids
-            lost_trend = go.Scatter(
-                x=lost_data['IR'],
-                y=lost_data['IR'].map(lambda x: 
-                    np.polyval(np.polyfit(lost_data['IR'], lost_data['CPI'], 1), x)
-                ),
+            x_range = np.linspace(min(lost_data['IR']), max(lost_data['IR']), 100)
+            coeffs = np.polyfit(lost_data['IR'], lost_data['CPI'], 1)
+            y_trend = np.polyval(coeffs, x_range)
+            
+            fig.add_trace(go.Scatter(
+                x=x_range,
+                y=y_trend,
                 mode='lines',
-                line=dict(color=LOST_COLOR, width=2, dash='solid'),
+                line=dict(color=COLOR_SYSTEM['CHARTS']['LOST'], width=2, dash='solid'),
                 name='Lost Trend',
                 hoverinfo='skip'
-            )
-            fig.add_trace(lost_trend)
+            ))
         
-        # Update layout with improved accessibility
+        # Apply consistent styling
+        fig = apply_chart_styling(
+            fig,
+            title="Relationship Between Incidence Rate (IR) and CPI",
+            height=600
+        )
+        
+        # Update axis titles with more descriptive labels
         fig.update_layout(
-            title_text="CPI vs Incidence Rate (IR) Relationship",
-            height=600,
-            xaxis_title="Incidence Rate (%)",
-            yaxis_title="CPI ($)",
-            legend=dict(
-                orientation="h",
-                yanchor="bottom",
-                y=1.02,
-                xanchor="right",
-                x=1
-            ),
-            # Add grid for easier reading of values
-            xaxis=dict(
-                gridcolor='rgba(0,0,0,0.1)',
-                gridwidth=1,
-                tickformat='.0f'  # No decimal places for IR
-            ),
-            yaxis=dict(
-                gridcolor='rgba(0,0,0,0.1)',
-                gridwidth=1,
-                tickprefix='$',  # Add dollar sign to y-axis
-            ),
-            # Improved accessibility with contrasting colors
-            plot_bgcolor='rgba(255,255,255,1)',
-            paper_bgcolor='rgba(255,255,255,1)',
-            font=dict(
-                family="Arial, sans-serif",
-                size=12,
-                color="black"
-            ),
-            # Add hover information template
-            hoverlabel=dict(
-                bgcolor="white",
-                font_size=12,
-                font_family="Arial"
+            xaxis_title="Incidence Rate (%) - Percentage of people who qualify for survey",
+            yaxis_title="Cost Per Interview ($)",
+        )
+        
+        # Add insights annotations
+        fig = add_insights_annotation(
+            fig,
+            "Lower incidence rates typically require higher CPI due to increased screening effort to find qualified respondents.",
+            0.01,
+            0.95,
+            width=220
+        )
+        
+        # Calculate and annotate the convergence point (if any)
+        try:
+            # Find where trend lines intersect
+            won_coeffs = np.polyfit(won_data['IR'], won_data['CPI'], 1)
+            lost_coeffs = np.polyfit(lost_data['IR'], lost_data['CPI'], 1)
+            
+            # Solve for intersection: m1*x + b1 = m2*x + b2
+            # x = (b2 - b1) / (m1 - m2)
+            if won_coeffs[0] != lost_coeffs[0]:  # Ensure slopes are different
+                intersection_x = (lost_coeffs[1] - won_coeffs[1]) / (won_coeffs[0] - lost_coeffs[0])
+                intersection_y = won_coeffs[0] * intersection_x + won_coeffs[1]
+                
+                # Only annotate if intersection is within realistic IR range
+                if 0 <= intersection_x <= 100:
+                    fig = add_data_point_annotation(
+                        fig,
+                        intersection_x,
+                        intersection_y,
+                        f"Trend lines converge at IR={intersection_x:.1f}%<br>suggesting price sensitivity<br>changes at this threshold",
+                        direction="up"
+                    )
+        except Exception as e:
+            logger.warning(f"Could not calculate intersection point: {e}")
+        
+        # Add median lines
+        won_median_cpi = won_data['CPI'].median()
+        lost_median_cpi = lost_data['CPI'].median()
+        
+        fig.add_shape(
+            type="line",
+            x0=0,
+            y0=won_median_cpi,
+            x1=100,
+            y1=won_median_cpi,
+            line=dict(
+                color=COLOR_SYSTEM['CHARTS']['WON'],
+                width=1,
+                dash="dot",
             )
         )
         
-        # Add annotations for context
+        fig.add_shape(
+            type="line",
+            x0=0,
+            y0=lost_median_cpi,
+            x1=100,
+            y1=lost_median_cpi,
+            line=dict(
+                color=COLOR_SYSTEM['CHARTS']['LOST'],
+                width=1,
+                dash="dot",
+            )
+        )
+        
+        # Add annotations for median lines
         fig.add_annotation(
-            x=won_data['IR'].min() + (won_data['IR'].max() - won_data['IR'].min()) * 0.05,
-            y=won_data['CPI'].max() - (won_data['CPI'].max() - won_data['CPI'].min()) * 0.05,
-            text="Lower IR typically requires<br>higher CPI due to<br>increased difficulty finding<br>qualified respondents",
+            x=5,
+            y=won_median_cpi,
+            text=f"Won Median: ${won_median_cpi:.2f}",
             showarrow=False,
-            align="left",
+            font=dict(
+                family=TYPOGRAPHY['FONT_FAMILY'],
+                size=10,
+                color=COLOR_SYSTEM['CHARTS']['WON']
+            ),
             bgcolor="rgba(255, 255, 255, 0.8)",
-            bordercolor="black",
-            borderwidth=1
+            borderpad=2
+        )
+        
+        fig.add_annotation(
+            x=5,
+            y=lost_median_cpi,
+            text=f"Lost Median: ${lost_median_cpi:.2f}",
+            showarrow=False,
+            font=dict(
+                family=TYPOGRAPHY['FONT_FAMILY'],
+                size=10,
+                color=COLOR_SYSTEM['CHARTS']['LOST']
+            ),
+            bgcolor="rgba(255, 255, 255, 0.8)",
+            borderpad=2
         )
         
         return fig
@@ -186,11 +245,12 @@ def create_bar_chart_by_bin(won_data: pd.DataFrame, lost_data: pd.DataFrame, bin
             x=won_agg[bin_column],
             y=won_agg[value_column],
             name='Won',
-            marker_color=WON_COLOR,
+            marker_color=COLOR_SYSTEM['CHARTS']['WON'],
             opacity=0.8,
-            text=won_agg[value_column].map('${:.2f}'.format),
+            text=won_agg[value_column].map('${:.2f}'.format) if value_column == 'CPI' else won_agg[value_column].map('{:.2f}'.format),
             textposition='auto',
-            hovertemplate='<b>Won Bids</b><br>%{x}<br>Avg ' + value_column + ': $%{y:.2f}<extra></extra>'
+            hovertemplate='<b>Won Bids</b><br>%{x}<br>Avg ' + value_column + ': $%{y:.2f}<extra></extra>' if value_column == 'CPI' else 
+                          '<b>Won Bids</b><br>%{x}<br>Avg ' + value_column + ': %{y:.2f}<extra></extra>'
         ))
         
         # Add Lost bars
@@ -198,11 +258,12 @@ def create_bar_chart_by_bin(won_data: pd.DataFrame, lost_data: pd.DataFrame, bin
             x=lost_agg[bin_column],
             y=lost_agg[value_column],
             name='Lost',
-            marker_color=LOST_COLOR,
+            marker_color=COLOR_SYSTEM['CHARTS']['LOST'],
             opacity=0.8,
-            text=lost_agg[value_column].map('${:.2f}'.format),
+            text=lost_agg[value_column].map('${:.2f}'.format) if value_column == 'CPI' else lost_agg[value_column].map('{:.2f}'.format),
             textposition='auto',
-            hovertemplate='<b>Lost Bids</b><br>%{x}<br>Avg ' + value_column + ': $%{y:.2f}<extra></extra>'
+            hovertemplate='<b>Lost Bids</b><br>%{x}<br>Avg ' + value_column + ': $%{y:.2f}<extra></extra>' if value_column == 'CPI' else
+                          '<b>Lost Bids</b><br>%{x}<br>Avg ' + value_column + ': %{y:.2f}<extra></extra>'
         ))
         
         # Generate automatic title if not provided
@@ -219,34 +280,18 @@ def create_bar_chart_by_bin(won_data: pd.DataFrame, lost_data: pd.DataFrame, bin
         else:
             xaxis_title = bin_column
         
-        # Update layout with improved accessibility
-        fig.update_layout(
+        # Apply consistent styling
+        fig = apply_chart_styling(
+            fig,
             title=title,
+            height=500
+        )
+        
+        # Update layout with custom axes
+        fig.update_layout(
             xaxis_title=xaxis_title,
             yaxis_title=f'Average {value_column} ($)' if value_column == 'CPI' else f'Average {value_column}',
             barmode='group',
-            height=500,
-            legend=dict(
-                orientation="h",
-                yanchor="bottom",
-                y=1.02,
-                xanchor="right",
-                x=1
-            ),
-            # Add grid for easier reading of values
-            yaxis=dict(
-                gridcolor='rgba(0,0,0,0.1)',
-                gridwidth=1,
-                tickprefix='$' if value_column == 'CPI' else '',  # Add dollar sign if CPI
-            ),
-            # Improved accessibility with contrasting colors
-            plot_bgcolor='rgba(255,255,255,1)',
-            paper_bgcolor='rgba(255,255,255,1)',
-            font=dict(
-                family="Arial, sans-serif",
-                size=12,
-                color="black"
-            )
         )
         
         # Add a percentage difference annotation
@@ -262,16 +307,35 @@ def create_bar_chart_by_bin(won_data: pd.DataFrame, lost_data: pd.DataFrame, bin
                 if abs(percent_diff) > 10:  # Only annotate significant differences
                     fig.add_annotation(
                         x=bin_name,
-                        y=max(won_val, lost_val) + 1,
+                        y=max(won_val, lost_val) * 1.05,
                         text=f"{percent_diff:+.1f}%",
                         showarrow=False,
                         font=dict(
+                            family=TYPOGRAPHY['FONT_FAMILY'],
                             size=10,
-                            color="black"
-                        )
+                            color=COLOR_SYSTEM['PRIMARY']['MAIN']
+                        ),
+                        bgcolor="rgba(255, 255, 255, 0.8)",
+                        bordercolor=COLOR_SYSTEM['NEUTRAL']['LIGHT'],
+                        borderwidth=1,
+                        borderpad=2
                     )
-            except:
+            except (IndexError, KeyError):
                 pass
+        
+        # Add an insights annotation if CPI is being analyzed
+        if value_column == 'CPI':
+            bin_type = "incidence rate" if bin_column == "IR_Bin" else \
+                       "interview length" if bin_column == "LOI_Bin" else \
+                       "sample size" if bin_column == "Completes_Bin" else bin_column
+                       
+            fig = add_insights_annotation(
+                fig,
+                f"This chart shows how average CPI varies by {bin_type} between won and lost bids. Larger percentage differences indicate pricing sensitivity in those segments.",
+                0.01, 
+                0.95,
+                width=220
+            )
         
         return fig
     
@@ -320,36 +384,74 @@ def create_heatmap(pivot_data: pd.DataFrame, title: str, colorscale: str = None)
             colorbar=dict(
                 title="Avg CPI ($)",
                 tickprefix="$",
-                len=0.75
+                len=0.75,
+                title_font=dict(
+                    family=TYPOGRAPHY['FONT_FAMILY'],
+                    size=12,
+                    color=COLOR_SYSTEM['PRIMARY']['MAIN']
+                ),
+                tickfont=dict(
+                    family=TYPOGRAPHY['FONT_FAMILY'],
+                    size=10,
+                    color=COLOR_SYSTEM['PRIMARY']['MAIN']
+                )
             )
         ))
         
-        # Update layout
+        # Apply consistent styling
         fig.update_layout(
             title=title,
             height=600,
             xaxis_title="LOI Bin",
             yaxis_title="IR Bin",
-            plot_bgcolor='rgba(255,255,255,1)',
-            paper_bgcolor='rgba(255,255,255,1)',
             font=dict(
-                family="Arial, sans-serif",
+                family=TYPOGRAPHY['FONT_FAMILY'],
                 size=12,
-                color="black"
-            )
+                color=COLOR_SYSTEM['PRIMARY']['MAIN']
+            ),
+            plot_bgcolor=COLOR_SYSTEM['NEUTRAL']['WHITE'],
+            paper_bgcolor=COLOR_SYSTEM['NEUTRAL']['WHITE'],
+            margin=dict(l=10, r=10, t=50, b=10),
         )
         
         # Update xaxis properties
         fig.update_xaxes(
             tickangle=45,
-            title_font=dict(size=14),
+            title_font=dict(
+                family=TYPOGRAPHY['FONT_FAMILY'],
+                size=14,
+                color=COLOR_SYSTEM['PRIMARY']['MAIN']
+            ),
+            tickfont=dict(
+                family=TYPOGRAPHY['FONT_FAMILY'],
+                size=10,
+                color=COLOR_SYSTEM['PRIMARY']['MAIN']
+            ),
             title_standoff=25
         )
         
         # Update yaxis properties
         fig.update_yaxes(
-            title_font=dict(size=14),
+            title_font=dict(
+                family=TYPOGRAPHY['FONT_FAMILY'],
+                size=14,
+                color=COLOR_SYSTEM['PRIMARY']['MAIN']
+            ),
+            tickfont=dict(
+                family=TYPOGRAPHY['FONT_FAMILY'],
+                size=10,
+                color=COLOR_SYSTEM['PRIMARY']['MAIN']
+            ),
             title_standoff=25
+        )
+        
+        # Add insights annotation
+        fig = add_insights_annotation(
+            fig,
+            text="This heatmap shows how average CPI varies across different combinations of Incidence Rate (IR) and Length of Interview (LOI). Darker colors indicate higher CPI values.",
+            x_pos=0.01,
+            y_pos=0.95,
+            width=220
         )
         
         return fig
