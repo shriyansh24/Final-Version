@@ -1,4 +1,84 @@
-# Calculate key metrics
+"""
+Insights component for the CPI Analysis & Prediction Dashboard.
+Provides strategic insights and recommendations based on data analysis.
+"""
+
+import streamlit as st
+import pandas as pd
+import numpy as np
+import plotly.express as px
+import plotly.graph_objects as go
+import logging
+from typing import Dict, Any, List, Tuple, Optional
+
+# Import UI components
+from ui_components import (
+    render_card, metrics_row, apply_chart_styling,
+    add_insights_annotation, grid_layout, render_icon_tabs
+)
+
+# Import data utilities
+from utils.data_processor import get_data_summary, engineer_features
+
+# Import configuration
+from config import COLOR_SYSTEM, TYPOGRAPHY
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+def show_insights(won_data: pd.DataFrame, lost_data: pd.DataFrame, combined_data: pd.DataFrame) -> None:
+    """
+    Display the insights and recommendations component.
+    
+    Args:
+        won_data (pd.DataFrame): DataFrame of Won bids
+        lost_data (pd.DataFrame): DataFrame of Lost bids
+        combined_data (pd.DataFrame): Combined DataFrame of both Won and Lost bids
+    """
+    try:
+        # Add page header
+        st.markdown(f"""
+        <h2 style="
+            font-family: {TYPOGRAPHY['FONT_FAMILY']};
+            color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
+            font-size: {TYPOGRAPHY['HEADING']['H2']['size']};
+            font-weight: {TYPOGRAPHY['HEADING']['H2']['weight']};
+            margin-bottom: 1rem;
+        ">Insights & Recommendations</h2>
+        """, unsafe_allow_html=True)
+        
+        # Add introduction card
+        intro_content = f"""
+        <p style="
+            font-family: {TYPOGRAPHY['FONT_FAMILY']};
+            font-size: {TYPOGRAPHY['BODY']['NORMAL']['size']};
+            color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
+        ">
+            This section provides strategic insights and actionable recommendations
+            based on comprehensive analysis of your bid pricing data.
+        </p>
+        <p style="
+            font-family: {TYPOGRAPHY['FONT_FAMILY']};
+            font-size: {TYPOGRAPHY['BODY']['NORMAL']['size']};
+            color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
+            margin-top: 0.5rem;
+        ">
+            Use these insights to optimize your pricing strategy, increase win rates,
+            and maximize profitability across different market research segments.
+        </p>
+        """
+        
+        render_card(
+            title="Strategic Insights Overview", 
+            content=intro_content,
+            icon=f'<span style="font-size: 1.5rem; color: {COLOR_SYSTEM["ACCENT"]["YELLOW"]};">💡</span>'
+        )
+        
+        # Get data summary
+        data_summary = get_data_summary(combined_data)
+        
+        # Calculate key metrics
         if 'Won' in data_summary and 'Lost' in data_summary:
             won_avg_cpi = data_summary['Won']['Avg_CPI']
             lost_avg_cpi = data_summary['Lost']['Avg_CPI']
@@ -743,6 +823,17 @@
             accent_color=COLOR_SYSTEM['ACCENT']['GREEN']
         )
         
+        # Add download button for pricing strategy document
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            st.download_button(
+                label="📄 Download Pricing Strategy Document",
+                data="# Pricing Strategy Document\n\nThis document contains the detailed pricing strategy and recommendations based on the CPI Analysis Dashboard.\n\n## Optimized Pricing Formula\n\nCPI = Base Rate × IR Factor × LOI Factor × Volume Factor\n\n...",
+                file_name="BidPricing_Strategy_Document.md",
+                mime="text/markdown",
+                key="download-strategy"
+            )
+        
         # Add disclaimer
         st.markdown(f"""
         <div style="
@@ -781,89 +872,4 @@
                 <li>Try using the filtered dataset if dealing with outliers</li>
             </ul>
         </div>
-        """, unsafe_allow_html=True)"""
-Insights component for the CPI Analysis & Prediction Dashboard.
-Provides strategic insights and recommendations based on data analysis.
-"""
-
-import streamlit as st
-import pandas as pd
-import numpy as np
-import plotly.express as px
-import plotly.graph_objects as go
-import logging
-from typing import Dict, Any, List, Tuple, Optional
-
-# Import UI components
-from ui_components import (
-    render_card, metrics_row, apply_chart_styling,
-    add_insights_annotation, grid_layout, render_icon_tabs
-)
-
-# Import data utilities
-from utils.data_processor import get_data_summary, engineer_features
-
-# Import configuration
-from config import COLOR_SYSTEM, TYPOGRAPHY
-
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
-
-def show_insights(won_data: pd.DataFrame, lost_data: pd.DataFrame, combined_data: pd.DataFrame) -> None:
-    """
-    Display the insights and recommendations component.
-    
-    Args:
-        won_data (pd.DataFrame): DataFrame of Won bids
-        lost_data (pd.DataFrame): DataFrame of Lost bids
-        combined_data (pd.DataFrame): Combined DataFrame of both Won and Lost bids
-    """
-    try:
-        # Add page header
-        st.markdown(f"""
-        <h2 style="
-            font-family: {TYPOGRAPHY['FONT_FAMILY']};
-            color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
-            font-size: {TYPOGRAPHY['HEADING']['H2']['size']};
-            font-weight: {TYPOGRAPHY['HEADING']['H2']['weight']};
-            margin-bottom: 1rem;
-        ">Insights & Recommendations</h2>
         """, unsafe_allow_html=True)
-        
-        # Add introduction card
-        intro_content = f"""
-        <p style="
-            font-family: {TYPOGRAPHY['FONT_FAMILY']};
-            font-size: {TYPOGRAPHY['BODY']['NORMAL']['size']};
-            color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
-        ">
-            This section provides strategic insights and actionable recommendations
-            based on comprehensive analysis of your bid pricing data.
-        </p>
-        <p style="
-            font-family: {TYPOGRAPHY['FONT_FAMILY']};
-            font-size: {TYPOGRAPHY['BODY']['NORMAL']['size']};
-            color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
-            margin-top: 0.5rem;
-        ">
-            Use these insights to optimize your pricing strategy, increase win rates,
-            and maximize profitability across different market research segments.
-        </p>
-        """
-        
-        render_card(
-            title="Strategic Insights Overview", 
-            content=intro_content,
-            icon=f'<span style="font-size: 1.5rem; color: {COLOR_SYSTEM["ACCENT"]["YELLOW"]};">💡</span>'
-        )
-        
-        # Get data summary
-        data_summary = get_data_summary(combined_data)
-        
-        # Calculate key metrics
-        if 'Won' in data_summary and 'Lost' in data_summary:
-            won_avg_cpi = data_summary['Won']['Avg_CPI']
-            lost_avg_cpi = data_summary['Lost']['Avg_CPI']
-            cpi_diff = lost_avg_cpi - won_avg_cpi
-            cpi_diff_pct = (lost_avg_cpi / won_avg_cpi - 1) *

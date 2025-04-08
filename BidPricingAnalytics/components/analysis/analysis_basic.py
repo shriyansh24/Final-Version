@@ -822,5 +822,4 @@ def show_basic_analysis(won_data: pd.DataFrame, lost_data: pd.DataFrame) -> None
                 <li>Ensure all required columns (IR, LOI, Completes, CPI) are present</li>
             </ul>
         </div>
-        """, unsafe_allow_html=True)won', '_lost')
-            )
+        """, unsafe_allow_html=True)
