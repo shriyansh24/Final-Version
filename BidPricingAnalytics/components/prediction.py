@@ -1,6 +1,6 @@
 """
-Insights component for the CPI Analysis & Prediction Dashboard.
-Provides strategic insights and recommendations based on data analysis.
+Prediction component for the CPI Analysis & Prediction Dashboard.
+Handles model predictions and recommendation display.
 """
 
 import streamlit as st
@@ -10,6 +10,10 @@ import plotly.express as px
 import plotly.graph_objects as go
 import logging
 from typing import Dict, Any, List, Tuple, Optional
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+from sklearn.linear_model import LinearRegression
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 
 # Import UI components
 from ui_components import (
@@ -17,27 +21,134 @@ from ui_components import (
     add_insights_annotation, grid_layout, render_icon_tabs
 )
 
+# Import visualization utilities
+from utils.visualization import (
+    create_feature_importance_chart,
+    create_prediction_comparison_chart
+)
+
 # Import data utilities
-from utils.data_processor import get_data_summary, engineer_features
+from utils.data_processor import get_data_summary, prepare_model_data
 
 # Import configuration
-from config import COLOR_SYSTEM, TYPOGRAPHY
+from config import (
+    COLOR_SYSTEM, TYPOGRAPHY, RANDOM_STATE, TEST_SIZE, DEFAULT_MODELS
+)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def show_insights(won_data: pd.DataFrame, lost_data: pd.DataFrame, combined_data: pd.DataFrame) -> None:
+
+def train_model(X, y, model_type='Random Forest'):
     """
-    Display the insights and recommendations component.
+    Train a model based on the specified type.
     
     Args:
+        X (pd.DataFrame): Features dataframe
+        y (pd.Series): Target variable
+        model_type (str): Type of model to train
+    
+    Returns:
+        tuple: (model, X_train, X_test, y_train, y_test)
+    """
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=TEST_SIZE, random_state=RANDOM_STATE
+    )
+    
+    if model_type == 'Linear Regression':
+        model = LinearRegression(**DEFAULT_MODELS['Linear Regression'])
+    elif model_type == 'Gradient Boosting':
+        model = GradientBoostingRegressor(**DEFAULT_MODELS['Gradient Boosting'])
+    else:  # Default to Random Forest
+        model = RandomForestRegressor(**DEFAULT_MODELS['Random Forest'])
+    
+    model.fit(X_train, y_train)
+    
+    return model, X_train, X_test, y_train, y_test
+
+
+def evaluate_model(model, X_test, y_test):
+    """
+    Evaluate model performance.
+    
+    Args:
+        model: Trained model
+        X_test (pd.DataFrame): Test features
+        y_test (pd.Series): Test target values
+    
+    Returns:
+        dict: Evaluation metrics including MAE, RMSE, R², y_test, and y_pred.
+    """
+    y_pred = model.predict(X_test)
+    mse = mean_squared_error(y_test, y_pred)
+    rmse = np.sqrt(mse)
+    mae = mean_absolute_error(y_test, y_pred)
+    r2 = r2_score(y_test, y_pred)
+    
+    return {
+        'MAE': mae,
+        'RMSE': rmse,
+        'R²': r2,
+        'y_test': y_test,
+        'y_pred': y_pred
+    }
+
+
+def get_feature_importance(model, feature_names, model_type):
+    """
+    Extract feature importance from the model.
+    
+    Args:
+        model: Trained model
+        feature_names: List of feature names
+        model_type: Type of model
+    
+    Returns:
+        pd.DataFrame: Feature importance dataframe sorted in descending order.
+    """
+    if model_type == 'Linear Regression':
+        importance = np.abs(model.coef_)
+    else:
+        importance = model.feature_importances_
+    
+    feature_importance = pd.DataFrame({
+        'Feature': feature_names,
+        'Importance': importance
+    })
+    
+    feature_importance = feature_importance.sort_values('Importance', ascending=False)
+    return feature_importance
+
+
+def predict_price(model, feature_values: Dict[str, float], feature_names: List[str]):
+    """
+    Make a prediction using the trained model.
+    
+    Args:
+        model: Trained model
+        feature_values (Dict[str, float]): Dictionary of feature values
+        feature_names (List[str]): List of feature names
+    
+    Returns:
+        float: Predicted CPI
+    """
+    features = np.array([feature_values.get(name, 0) for name in feature_names]).reshape(1, -1)
+    prediction = model.predict(features)[0]
+    return prediction
+
+
+def show_prediction(data: pd.DataFrame, won_data: pd.DataFrame, lost_data: pd.DataFrame) -> None:
+    """
+    Display the prediction component with model training, evaluation, and prediction interface.
+    
+    Args:
+        data (pd.DataFrame): Engineered data for modeling
         won_data (pd.DataFrame): DataFrame of Won bids
         lost_data (pd.DataFrame): DataFrame of Lost bids
-        combined_data (pd.DataFrame): Combined DataFrame of both Won and Lost bids
     """
     try:
-        # Add page header
+        # Page header
         st.markdown(f"""
         <h2 style="
             font-family: {TYPOGRAPHY['FONT_FAMILY']};
@@ -45,18 +156,18 @@ def show_insights(won_data: pd.DataFrame, lost_data: pd.DataFrame, combined_data
             font-size: {TYPOGRAPHY['HEADING']['H2']['size']};
             font-weight: {TYPOGRAPHY['HEADING']['H2']['weight']};
             margin-bottom: 1rem;
-        ">Insights & Recommendations</h2>
+        ">CPI Prediction & Price Optimization</h2>
         """, unsafe_allow_html=True)
         
-        # Add introduction card
+        # Introduction card
         intro_content = f"""
         <p style="
             font-family: {TYPOGRAPHY['FONT_FAMILY']};
             font-size: {TYPOGRAPHY['BODY']['NORMAL']['size']};
             color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
         ">
-            This section provides strategic insights and actionable recommendations
-            based on comprehensive analysis of your bid pricing data.
+            This section lets you predict optimal CPI values based on project parameters.
+            The model analyzes historical won and lost bids to recommend competitive pricing.
         </p>
         <p style="
             font-family: {TYPOGRAPHY['FONT_FAMILY']};
@@ -64,797 +175,522 @@ def show_insights(won_data: pd.DataFrame, lost_data: pd.DataFrame, combined_data
             color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
             margin-top: 0.5rem;
         ">
-            Use these insights to optimize your pricing strategy, increase win rates,
-            and maximize profitability across different market research segments.
+            <strong>How to use:</strong> Either train a new model or use the pre-trained model to 
+            get CPI predictions based on project parameters.
         </p>
         """
-        
         render_card(
-            title="Strategic Insights Overview", 
+            title="CPI Prediction Tools", 
             content=intro_content,
-            icon=f'<span style="font-size: 1.5rem; color: {COLOR_SYSTEM["ACCENT"]["YELLOW"]};">💡</span>'
+            icon=f'<span style="font-size: 1.5rem; color: {COLOR_SYSTEM["ACCENT"]["PURPLE"]};">🔮</span>'
         )
         
-        # Get data summary
-        data_summary = get_data_summary(combined_data)
+        # Prepare model data
+        X, y = prepare_model_data(data)
+        if X.empty or len(y) == 0:
+            st.error("Insufficient data for modeling. Please check your data.")
+            return
         
-        # Calculate key metrics
-        if 'Won' in data_summary and 'Lost' in data_summary:
-            won_avg_cpi = data_summary['Won']['Avg_CPI']
-            lost_avg_cpi = data_summary['Lost']['Avg_CPI']
-            cpi_diff = lost_avg_cpi - won_avg_cpi
-            cpi_diff_pct = (lost_avg_cpi / won_avg_cpi - 1) * 100
-            
-            # Calculate win rate
-            won_count = (combined_data['Type'] == 'Won').sum()
-            total_count = len(combined_data)
-            win_rate = (won_count / total_count) * 100 if total_count > 0 else 0
-        else:
-            won_avg_cpi = 0
-            lost_avg_cpi = 0
-            cpi_diff = 0
-            cpi_diff_pct = 0
-            win_rate = 0
-        
-        # Display key metrics
         st.markdown(f"""
         <h3 style="
             font-family: {TYPOGRAPHY['FONT_FAMILY']};
             color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
             font-size: {TYPOGRAPHY['HEADING']['H3']['size']};
             font-weight: {TYPOGRAPHY['HEADING']['H3']['weight']};
-            margin: 1rem 0;
-        ">Key Performance Indicators</h3>
+            margin: 1.5rem 0 1rem 0;
+        ">Price Prediction & Recommendation</h3>
         """, unsafe_allow_html=True)
         
-        # Create KPI metrics
-        metrics_data = [
-            {
-                "label": "Win Rate",
-                "value": f"{win_rate:.1f}%",
-                "delta": None
-            },
-            {
-                "label": "Price Premium (Lost vs Won)",
-                "value": f"${cpi_diff:.2f}",
-                "delta": f"{cpi_diff_pct:.1f}%",
-                "delta_color": "normal"
-            },
-            {
-                "label": "Average Margin",
-                "value": "25.3%",  # Example value - could be calculated from actual data if available
-                "delta": "+2.1%",  # Example value
-                "delta_color": "normal"
-            }
+        prediction_intro = f"""
+        <p style="
+            font-family: {TYPOGRAPHY['FONT_FAMILY']};
+            font-size: {TYPOGRAPHY['BODY']['NORMAL']['size']};
+            color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
+        ">
+            Enter the project parameters below to get a predicted CPI and pricing recommendation.
+            The prediction is based on historical data patterns and the selected model.
+        </p>
+        <p style="
+            font-family: {TYPOGRAPHY['FONT_FAMILY']};
+            font-size: {TYPOGRAPHY['BODY']['NORMAL']['size']};
+            color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
+            margin-top: 0.5rem;
+        ">
+            <strong>Note:</strong> The predicted CPI is a starting point. Consider additional
+            factors such as client relationships, competition, and strategic importance.
+        </p>
+        """
+        render_card(
+            title="CPI Prediction Tool", 
+            content=prediction_intro,
+            icon=f'<span style="font-size: 1.5rem; color: {COLOR_SYSTEM["ACCENT"]["BLUE"]};">💰</span>'
+        )
+        
+        # Train/load default model if not in session
+        if 'model' not in st.session_state:
+            with st.spinner("Preparing default prediction model..."):
+                model, X_train, X_test, y_train, y_test = train_model(X, y, 'Random Forest')
+                st.session_state['model'] = model
+                st.session_state['model_type'] = 'Random Forest'
+                st.session_state['feature_names'] = X.columns.tolist()
+                metrics = evaluate_model(model, X_test, y_test)
+                st.session_state['model_metrics'] = metrics
+                feature_importance = get_feature_importance(model, X.columns, 'Random Forest')
+                st.session_state['feature_importance'] = feature_importance
+        
+        # Input form for project parameters
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            ir_value = st.slider(
+                "Incidence Rate (%)",
+                min_value=float(data['IR'].min()),
+                max_value=float(data['IR'].max()),
+                value=float(data['IR'].median()),
+                step=1.0,
+                help="Percentage of people who qualify for the survey"
+            )
+        with col2:
+            loi_value = st.slider(
+                "Length of Interview (min)",
+                min_value=float(data['LOI'].min()),
+                max_value=float(data['LOI'].max()),
+                value=float(data['LOI'].median()),
+                step=1.0,
+                help="Average survey duration in minutes"
+            )
+        with col3:
+            completes_value = st.slider(
+                "Sample Size (Completes)",
+                min_value=int(data['Completes'].min()),
+                max_value=int(data['Completes'].max()),
+                value=int(data['Completes'].median()),
+                step=50,
+                help="Number of completed surveys required"
+            )
+        
+        # Build feature values dictionary
+        feature_values = {
+            'IR': ir_value,
+            'LOI': loi_value,
+            'Completes': completes_value
+        }
+        if 'Type_Won' in st.session_state.get('feature_names', []):
+            feature_values['Type_Won'] = 1
+        
+        feature_values['IR_LOI_Ratio'] = feature_values['IR'] / feature_values['LOI']
+        feature_values['IR_Completes_Ratio'] = feature_values['IR'] / feature_values['Completes']
+        feature_values['LOI_Completes_Ratio'] = feature_values['LOI'] / feature_values['Completes']
+        
+        if 'Log_Completes' in st.session_state.get('feature_names', []):
+            feature_values['Log_Completes'] = np.log1p(feature_values['Completes'])
+        if 'Log_IR' in st.session_state.get('feature_names', []):
+            feature_values['Log_IR'] = np.log1p(feature_values['IR'])
+        if 'Log_LOI' in st.session_state.get('feature_names', []):
+            feature_values['Log_LOI'] = np.log1p(feature_values['LOI'])
+        
+        if 'IR_LOI_Product' in st.session_state.get('feature_names', []):
+            feature_values['IR_LOI_Product'] = feature_values['IR'] * feature_values['LOI']
+        if 'IR_Completes_Product' in st.session_state.get('feature_names', []):
+            feature_values['IR_Completes_Product'] = feature_values['IR'] * feature_values['Completes']
+        
+        feature_values['CPI_Efficiency'] = (feature_values['IR'] / 100) * (1 / feature_values['LOI']) * feature_values['Completes']
+        
+        if 'IR_Normalized' in st.session_state.get('feature_names', []):
+            ir_mean = data['IR'].mean()
+            ir_std = data['IR'].std()
+            feature_values['IR_Normalized'] = (feature_values['IR'] - ir_mean) / ir_std
+        if 'LOI_Normalized' in st.session_state.get('feature_names', []):
+            loi_mean = data['LOI'].mean()
+            loi_std = data['LOI'].std()
+            feature_values['LOI_Normalized'] = (feature_values['LOI'] - loi_mean) / loi_std
+        if 'Completes_Normalized' in st.session_state.get('feature_names', []):
+            completes_mean = data['Completes'].mean()
+            completes_std = data['Completes'].std()
+            feature_values['Completes_Normalized'] = (feature_values['Completes'] - completes_mean) / completes_std
+        
+        data_summary = get_data_summary(data)
+        won_avg = data_summary.get('Won', {}).get('Avg_CPI', 0)
+        lost_avg = data_summary.get('Lost', {}).get('Avg_CPI', 0)
+        
+        # Identify similar projects for context
+        ir_range = 10  # +/- percentage points
+        loi_range = 5  # +/- minutes
+        similar_won = won_data[
+            (won_data['IR'] >= ir_value - ir_range) &
+            (won_data['IR'] <= ir_value + ir_range) &
+            (won_data['LOI'] >= loi_value - loi_range) &
+            (won_data['LOI'] <= loi_value + loi_range)
         ]
+        similar_lost = lost_data[
+            (lost_data['IR'] >= ir_value - ir_range) &
+            (lost_data['IR'] <= ir_value + ir_range) &
+            (lost_data['LOI'] >= loi_value - loi_range) &
+            (lost_data['LOI'] <= loi_value + loi_range)
+        ]
+        similar_won_avg = similar_won['CPI'].mean() if not similar_won.empty else won_avg
+        similar_lost_avg = similar_lost['CPI'].mean() if not similar_lost.empty else lost_avg
         
-        metrics_row(metrics_data)
+        # Generate CPI Prediction
+        if st.button("Generate CPI Prediction", type="primary"):
+            with st.spinner("Calculating optimal CPI..."):
+                predicted_cpi = predict_price(
+                    st.session_state['model'],
+                    feature_values,
+                    st.session_state['feature_names']
+                )
+                st.session_state['predicted_cpi'] = predicted_cpi
+                st.session_state['similar_won_avg'] = similar_won_avg
+                st.session_state['similar_lost_avg'] = similar_lost_avg
+                
+                # Model comparison: train other models for reference
+                all_predictions = {}
+                all_predictions[f"Current Model ({st.session_state['model_type']})"] = predicted_cpi
+                
+                if 'all_model_predictions' not in st.session_state:
+                    other_models = [m for m in ["Random Forest", "Linear Regression", "Gradient Boosting"] 
+                                    if m != st.session_state['model_type']]
+                    for model_name in other_models:
+                        other_model, _, _, _, _ = train_model(X, y, model_name)
+                        other_pred = predict_price(other_model, feature_values, st.session_state['feature_names'])
+                        all_predictions[model_name] = other_pred
+                else:
+                    all_predictions.update(st.session_state['all_model_predictions'])
+                
+                st.session_state['all_model_predictions'] = all_predictions
+                st.success("CPI prediction generated successfully!")
         
-        # Engineering features for analysis
-        engineered_data = engineer_features(combined_data)
-        
-        # Create insights from engineered data if available
-        if not engineered_data.empty and 'CPI_Efficiency' in engineered_data.columns:
-            # Split into won and lost
-            won_engineered = engineered_data[engineered_data['Type'] == 'Won']
-            lost_engineered = engineered_data[engineered_data['Type'] == 'Lost']
+        # Display prediction results if available
+        if 'predicted_cpi' in st.session_state:
+            predicted_cpi = st.session_state['predicted_cpi']
+            similar_won_avg = st.session_state['similar_won_avg']
+            similar_lost_avg = st.session_state['similar_lost_avg']
             
-            # Calculate efficiency metrics
-            won_efficiency = won_engineered['CPI_Efficiency'].mean()
-            lost_efficiency = lost_engineered['CPI_Efficiency'].mean()
-            efficiency_diff_pct = ((won_efficiency / lost_efficiency) - 1) * 100 if lost_efficiency > 0 else 0
+            st.markdown("<hr>", unsafe_allow_html=True)
             
-            # Add efficiency metrics
+            st.markdown(f"""
+            <h4 style="
+                font-family: {TYPOGRAPHY['FONT_FAMILY']};
+                color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
+                font-size: {TYPOGRAPHY['HEADING']['H4']['size']};
+                font-weight: {TYPOGRAPHY['HEADING']['H4']['weight']};
+                margin: 1rem 0 0.5rem 0;
+            ">CPI Prediction Results</h4>
+            """, unsafe_allow_html=True)
+            
+            is_competitive = predicted_cpi <= (similar_won_avg * 1.1)
+            is_high_risk = predicted_cpi >= (similar_lost_avg * 0.9)
+            pricing_category = "Competitive" if is_competitive else "High Risk" if is_high_risk else "Moderate"
+            pricing_color = (
+                COLOR_SYSTEM['ACCENT']['GREEN'] if pricing_category == "Competitive" else
+                COLOR_SYSTEM['ACCENT']['RED'] if pricing_category == "High Risk" else
+                COLOR_SYSTEM['ACCENT']['YELLOW']
+            )
+            
             metrics_data = [
                 {
-                    "label": "Won Efficiency",
-                    "value": f"{won_efficiency:.2f}",
+                    "label": "Predicted CPI",
+                    "value": f"${predicted_cpi:.2f}",
                     "delta": None
                 },
                 {
-                    "label": "Lost Efficiency",
-                    "value": f"{lost_efficiency:.2f}",
-                    "delta": None
+                    "label": "Similar Won CPI",
+                    "value": f"${similar_won_avg:.2f}",
+                    "delta": f"{((predicted_cpi / similar_won_avg) - 1) * 100:.1f}%" if similar_won_avg > 0 else None,
+                    "delta_color": "normal"
                 },
                 {
-                    "label": "Efficiency Difference",
-                    "value": f"{efficiency_diff_pct:.1f}%",
-                    "delta": "higher" if efficiency_diff_pct > 0 else "lower",
+                    "label": "Similar Lost CPI",
+                    "value": f"${similar_lost_avg:.2f}",
+                    "delta": f"{((predicted_cpi / similar_lost_avg) - 1) * 100:.1f}%" if similar_lost_avg > 0 else None,
                     "delta_color": "normal"
                 }
             ]
             
             metrics_row(metrics_data)
-        
-        # Create strategic insights and recommendations
-        st.markdown(f"""
-        <h3 style="
-            font-family: {TYPOGRAPHY['FONT_FAMILY']};
-            color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
-            font-size: {TYPOGRAPHY['HEADING']['H3']['size']};
-            font-weight: {TYPOGRAPHY['HEADING']['H3']['weight']};
-            margin: 1.5rem 0 1rem 0;
-        ">Strategic Pricing Insights</h3>
-        """, unsafe_allow_html=True)
-        
-        # Function to render strategic insights
-        def render_insight_1():
-            render_card(
-                title="Price Sensitivity Analysis", 
-                content=f"""
-                <p style="
-                    font-family: {TYPOGRAPHY['FONT_FAMILY']};
-                    font-size: {TYPOGRAPHY['BODY']['NORMAL']['size']};
-                    color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
-                ">
-                    Your lost bids are priced <strong>${cpi_diff:.2f}</strong> higher on average than won bids,
-                    representing a <strong>{cpi_diff_pct:.1f}%</strong> premium.
-                </p>
-                <p style="
-                    font-family: {TYPOGRAPHY['FONT_FAMILY']};
-                    font-size: {TYPOGRAPHY['BODY']['NORMAL']['size']};
-                    color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
-                    margin-top: 0.5rem;
-                ">
-                    <strong>Strategic recommendation:</strong> Consider a maximum pricing premium of 
-                    <strong>{min(15.0, cpi_diff_pct * 0.8):.1f}%</strong> above your average won bid pricing
-                    to maximize both win rate and profitability.
-                </p>
-                """,
-                icon=f'<span style="font-size: 1.5rem; color: {COLOR_SYSTEM["ACCENT"]["BLUE"]};">📉</span>',
-                accent_color=COLOR_SYSTEM['ACCENT']['BLUE']
-            )
-        
-        def render_insight_2():
-            # Find optimal IR range from won data
-            ir_bins = won_data.groupby('IR_Bin')['CPI'].agg(['mean', 'count']).reset_index()
-            ir_bins = ir_bins.sort_values('count', ascending=False)
             
-            # Get top 3 most common IR bins
-            top_ir_bins = ir_bins.head(3)['IR_Bin'].tolist()
-            
-            render_card(
-                title="Market Segment Optimization", 
-                content=f"""
-                <p style="
-                    font-family: {TYPOGRAPHY['FONT_FAMILY']};
-                    font-size: {TYPOGRAPHY['BODY']['NORMAL']['size']};
-                    color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
-                ">
-                    Your highest win rates occur in projects with Incidence Rates in these ranges:
-                    <strong>{', '.join(top_ir_bins)}</strong>.
-                </p>
-                <p style="
-                    font-family: {TYPOGRAPHY['FONT_FAMILY']};
-                    font-size: {TYPOGRAPHY['BODY']['NORMAL']['size']};
-                    color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
-                    margin-top: 0.5rem;
-                ">
-                    <strong>Strategic recommendation:</strong> Focus sales efforts on projects matching these 
-                    IR profiles where you have competitive advantage, and consider more aggressive pricing
-                    for projects outside these optimal ranges.
-                </p>
-                """,
-                icon=f'<span style="font-size: 1.5rem; color: {COLOR_SYSTEM["ACCENT"]["GREEN"]};">🎯</span>',
-                accent_color=COLOR_SYSTEM['ACCENT']['GREEN']
-            )
-        
-        def render_insight_3():
-            render_card(
-                title="Volume Discount Strategy", 
-                content=f"""
-                <p style="
-                    font-family: {TYPOGRAPHY['FONT_FAMILY']};
-                    font-size: {TYPOGRAPHY['BODY']['NORMAL']['size']};
-                    color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
-                ">
-                    Analysis shows that larger sample sizes (1000+ completes) have a <strong>higher win rate</strong> 
-                    when priced with modest volume discounts.
-                </p>
-                <p style="
-                    font-family: {TYPOGRAPHY['FONT_FAMILY']};
-                    font-size: {TYPOGRAPHY['BODY']['NORMAL']['size']};
-                    color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
-                    margin-top: 0.5rem;
-                ">
-                    <strong>Strategic recommendation:</strong> Implement a tiered discount structure:
-                </p>
-                <ul style="
-                    font-family: {TYPOGRAPHY['FONT_FAMILY']};
-                    font-size: {TYPOGRAPHY['BODY']['NORMAL']['size']};
-                    color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
-                ">
-                    <li>500-999 completes: 5% discount</li>
-                    <li>1000-1499 completes: 7.5% discount</li>
-                    <li>1500+ completes: 10% discount</li>
-                </ul>
-                """,
-                icon=f'<span style="font-size: 1.5rem; color: {COLOR_SYSTEM["ACCENT"]["PURPLE"]};">📊</span>',
-                accent_color=COLOR_SYSTEM['ACCENT']['PURPLE']
-            )
-        
-        # Display insights in a grid
-        grid_layout(3, [render_insight_1, render_insight_2, render_insight_3])
-        
-        # Create detailed recommendations
-        st.markdown(f"""
-        <h3 style="
-            font-family: {TYPOGRAPHY['FONT_FAMILY']};
-            color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
-            font-size: {TYPOGRAPHY['HEADING']['H3']['size']};
-            font-weight: {TYPOGRAPHY['HEADING']['H3']['weight']};
-            margin: 1.5rem 0 1rem 0;
-        ">Actionable Recommendations</h3>
-        """, unsafe_allow_html=True)
-        
-        # Create a pricing formula card
-        pricing_formula_content = f"""
-        <p style="
-            font-family: {TYPOGRAPHY['FONT_FAMILY']};
-            font-size: {TYPOGRAPHY['BODY']['NORMAL']['size']};
-            color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
-        ">
-            Based on our analysis, we recommend this optimized pricing formula:
-        </p>
-        <div style="
-            background-color: {COLOR_SYSTEM['BACKGROUND']['ALT']};
-            border-radius: 0.5rem;
-            padding: 1rem;
-            margin: 0.75rem 0;
-            font-family: monospace;
-            font-size: 0.9rem;
-        ">
-            <strong>CPI</strong> = <strong>Base Rate</strong> × <strong>IR Factor</strong> × <strong>LOI Factor</strong> × <strong>Volume Factor</strong>
-        </div>
-        <p style="
-            font-family: {TYPOGRAPHY['FONT_FAMILY']};
-            font-size: {TYPOGRAPHY['BODY']['NORMAL']['size']};
-            color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
-            margin-top: 0.5rem;
-        ">
-            Where:
-        </p>
-        <ul style="
-            font-family: {TYPOGRAPHY['FONT_FAMILY']};
-            font-size: {TYPOGRAPHY['BODY']['NORMAL']['size']};
-            color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
-        ">
-            <li><strong>Base Rate</strong> = ${won_avg_cpi:.2f} (Average CPI for won bids)</li>
-            <li><strong>IR Factor</strong> = 1.5 for IR &lt; 10%; 1.2 for IR 10-30%; 1.0 for IR 30-50%; 0.9 for IR &gt; 50%</li>
-            <li><strong>LOI Factor</strong> = LOI ÷ 10 (normalized to a 10-minute interview)</li>
-            <li><strong>Volume Factor</strong> = 1.0 for &lt;500 completes; 0.95 for 500-999; 0.925 for 1000-1499; 0.9 for 1500+</li>
-        </ul>
-        <p style="
-            font-family: {TYPOGRAPHY['FONT_FAMILY']};
-            font-size: {TYPOGRAPHY['BODY']['NORMAL']['size']};
-            color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
-            margin-top: 0.75rem;
-        ">
-            <strong>Example:</strong> For a project with IR 20%, LOI 15 minutes, and 800 completes:
-            <br>
-            CPI = ${won_avg_cpi:.2f} × 1.2 × (15÷10) × 0.95 = <strong>${won_avg_cpi * 1.2 * 1.5 * 0.95:.2f}</strong>
-        </p>
-        """
-        
-        render_card(
-            title="Optimized Pricing Formula", 
-            content=pricing_formula_content,
-            icon=f'<span style="font-size: 1.5rem; color: {COLOR_SYSTEM["ACCENT"]["RED"]};">🧮</span>',
-            accent_color=COLOR_SYSTEM['ACCENT']['RED']
-        )
-        
-        # Create specific recommendations for different scenarios
-        st.markdown(f"""
-        <h4 style="
-            font-family: {TYPOGRAPHY['FONT_FAMILY']};
-            color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
-            font-size: {TYPOGRAPHY['HEADING']['H4']['size']};
-            font-weight: {TYPOGRAPHY['HEADING']['H4']['weight']};
-            margin: 1rem 0 0.5rem 0;
-        ">Scenario-Based Recommendations</h4>
-        """, unsafe_allow_html=True)
-        
-        # Create tabs for different scenarios
-        tab1, tab2, tab3 = st.tabs([
-            "Competitive Bids", 
-            "Strategic Client Relationships",
-            "Long-Term Growth"
-        ])
-        
-        with tab1:
-            render_card(
-                title="Winning Competitive Bids", 
-                content=f"""
-                <p style="
-                    font-family: {TYPOGRAPHY['FONT_FAMILY']};
-                    font-size: {TYPOGRAPHY['BODY']['NORMAL']['size']};
-                    color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
-                ">
-                    For highly competitive situations where winning is essential:
-                </p>
-                <ol style="
-                    font-family: {TYPOGRAPHY['FONT_FAMILY']};
-                    font-size: {TYPOGRAPHY['BODY']['NORMAL']['size']};
-                    color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
-                ">
-                    <li><strong>Price at the 25th percentile</strong> of won bids for similar projects (${data_summary['Won']['CPI_25th']:.2f})</li>
-                    <li><strong>Highlight efficiency advantages</strong> in your proposal, focusing on quicker turnaround times</li>
-                    <li><strong>Offer value-added services</strong> at no additional cost, such as a brief executive summary or simple dashboard</li>
-                    <li><strong>Include volume discounts</strong> for larger sample sizes to secure the entire project</li>
-                    <li><strong>Consider a "price match guarantee"</strong> for key accounts to prevent losing on price alone</li>
-                </ol>
-                <p style="
-                    font-family: {TYPOGRAPHY['FONT_FAMILY']};
-                    font-size: {TYPOGRAPHY['BODY']['NORMAL']['size']};
-                    color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
-                    margin-top: 0.75rem;
-                    font-style: italic;
-                ">
-                    Note: Use the competitive pricing strategy selectively to avoid setting unsustainable price expectations.
-                </p>
-                """,
-                accent_color=COLOR_SYSTEM['ACCENT']['BLUE']
-            )
-        
-        with tab2:
-            render_card(
-                title="Strategic Client Relationships", 
-                content=f"""
-                <p style="
-                    font-family: {TYPOGRAPHY['FONT_FAMILY']};
-                    font-size: {TYPOGRAPHY['BODY']['NORMAL']['size']};
-                    color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
-                ">
-                    For high-value, strategic client relationships:
-                </p>
-                <ol style="
-                    font-family: {TYPOGRAPHY['FONT_FAMILY']};
-                    font-size: {TYPOGRAPHY['BODY']['NORMAL']['size']};
-                    color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
-                ">
-                    <li><strong>Implement tiered pricing</strong> based on annual client volume, offering better rates for higher commitment</li>
-                    <li><strong>Create customized pricing packages</strong> with varying service levels to allow flexibility</li>
-                    <li><strong>Develop annual contracts</strong> with guaranteed volume discounts to secure long-term business</li>
-                    <li><strong>Bundle complementary services</strong> to increase value perception beyond price</li>
-                    <li><strong>Offer pilot project discounts</strong> for new methodologies to encourage client innovation</li>
-                </ol>
-                <p style="
-                    font-family: {TYPOGRAPHY['FONT_FAMILY']};
-                    font-size: {TYPOGRAPHY['BODY']['NORMAL']['size']};
-                    color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
-                    margin-top: 0.75rem;
-                ">
-                    <strong>Long-term benefits:</strong> Higher client retention, more predictable revenue, and reduced price sensitivity.
-                </p>
-                """,
-                accent_color=COLOR_SYSTEM['ACCENT']['GREEN']
-            )
-        
-        with tab3:
-            render_card(
-                title="Long-Term Growth Strategy", 
-                content=f"""
-                <p style="
-                    font-family: {TYPOGRAPHY['FONT_FAMILY']};
-                    font-size: {TYPOGRAPHY['BODY']['NORMAL']['size']};
-                    color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
-                ">
-                    Strategic actions to improve pricing power and market position:
-                </p>
-                <ol style="
-                    font-family: {TYPOGRAPHY['FONT_FAMILY']};
-                    font-size: {TYPOGRAPHY['BODY']['NORMAL']['size']};
-                    color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
-                ">
-                    <li><strong>Differentiate services</strong> based on methodological expertise, specialized panels, or proprietary analysis</li>
-                    <li><strong>Systematically track competitor pricing</strong> and update your pricing strategy quarterly</li>
-                    <li><strong>Develop specialized capabilities</strong> for high-value, low-incidence projects where price sensitivity is lower</li>
-                    <li><strong>Create self-service options</strong> with transparent pricing for smaller, simpler projects</li>
-                    <li><strong>Invest in automation</strong> to reduce costs and improve margins without lowering prices</li>
-                </ol>
-                <p style="
-                    font-family: {TYPOGRAPHY['FONT_FAMILY']};
-                    font-size: {TYPOGRAPHY['BODY']['NORMAL']['size']};
-                    color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
-                    margin-top: 0.75rem;
-                ">
-                    <strong>Expected outcome:</strong> Gradual shift toward higher-margin, less price-sensitive business mix over 12-18 months.
-                </p>
-                """,
-                accent_color=COLOR_SYSTEM['ACCENT']['PURPLE']
-            )
-        
-        # Add quarterly pricing review calendar
-        st.markdown(f"""
-        <h4 style="
-            font-family: {TYPOGRAPHY['FONT_FAMILY']};
-            color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
-            font-size: {TYPOGRAPHY['HEADING']['H4']['size']};
-            font-weight: {TYPOGRAPHY['HEADING']['H4']['weight']};
-            margin: 1.5rem 0 0.5rem 0;
-        ">Quarterly Pricing Review Calendar</h4>
-        """, unsafe_allow_html=True)
-        
-        calendar_content = f"""
-        <div style="
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 1rem;
-            margin-top: 0.5rem;
-        ">
+            recommendation_content = f"""
             <div style="
-                background-color: {COLOR_SYSTEM['BACKGROUND']['CARD']};
-                border-radius: 0.5rem;
-                padding: 1rem;
-                border-top: 3px solid {COLOR_SYSTEM['ACCENT']['BLUE']};
+                display: flex;
+                align-items: center;
+                margin-bottom: 1rem;
             ">
-                <h5 style="
-                    font-family: {TYPOGRAPHY['FONT_FAMILY']};
-                    color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
-                    font-size: 1.1rem;
-                    font-weight: 600;
-                    margin: 0 0 0.5rem 0;
-                ">Q1: January-March</h5>
-                <ul style="
-                    font-family: {TYPOGRAPHY['FONT_FAMILY']};
-                    font-size: {TYPOGRAPHY['BODY']['SMALL']['size']};
-                    color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
-                    padding-left: 1.2rem;
+                <div style="
+                    width: 20px;
+                    height: 20px;
+                    border-radius: 50%;
+                    background-color: {pricing_color};
+                    margin-right: 10px;
+                "></div>
+                <h4 style="
                     margin: 0;
-                ">
-                    <li>Annual pricing strategy review</li>
-                    <li>Competitor analysis</li>
-                    <li>Set annual targets</li>
-                    <li>Client tier reassignment</li>
-                </ul>
-            </div>
-            
-            <div style="
-                background-color: {COLOR_SYSTEM['BACKGROUND']['CARD']};
-                border-radius: 0.5rem;
-                padding: 1rem;
-                border-top: 3px solid {COLOR_SYSTEM['ACCENT']['GREEN']};
-            ">
-                <h5 style="
+                    color: {pricing_color};
                     font-family: {TYPOGRAPHY['FONT_FAMILY']};
-                    color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
-                    font-size: 1.1rem;
+                    font-size: 1.2rem;
                     font-weight: 600;
-                    margin: 0 0 0.5rem 0;
-                ">Q2: April-June</h5>
-                <ul style="
-                    font-family: {TYPOGRAPHY['FONT_FAMILY']};
-                    font-size: {TYPOGRAPHY['BODY']['SMALL']['size']};
-                    color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
-                    padding-left: 1.2rem;
-                    margin: 0;
                 ">
-                    <li>Specialty panel pricing review</li>
-                    <li>Mid-year win rate analysis</li>
-                    <li>Client feedback collection</li>
-                    <li>Cost structure evaluation</li>
-                </ul>
+                    {pricing_category} Pricing
+                </h4>
             </div>
-            
-            <div style="
-                background-color: {COLOR_SYSTEM['BACKGROUND']['CARD']};
-                border-radius: 0.5rem;
-                padding: 1rem;
-                border-top: 3px solid {COLOR_SYSTEM['ACCENT']['ORANGE']};
-            ">
-                <h5 style="
-                    font-family: {TYPOGRAPHY['FONT_FAMILY']};
-                    color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
-                    font-size: 1.1rem;
-                    font-weight: 600;
-                    margin: 0 0 0.5rem 0;
-                ">Q3: July-September</h5>
-                <ul style="
-                    font-family: {TYPOGRAPHY['FONT_FAMILY']};
-                    font-size: {TYPOGRAPHY['BODY']['SMALL']['size']};
-                    color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
-                    padding-left: 1.2rem;
-                    margin: 0;
-                ">
-                    <li>Volume discount assessment</li>
-                    <li>Methodology pricing updates</li>
-                    <li>Profit margin evaluation</li>
-                    <li>Strategic account planning</li>
-                </ul>
-            </div>
-            
-            <div style="
-                background-color: {COLOR_SYSTEM['BACKGROUND']['CARD']};
-                border-radius: 0.5rem;
-                padding: 1rem;
-                border-top: 3px solid {COLOR_SYSTEM['ACCENT']['PURPLE']};
-            ">
-                <h5 style="
-                    font-family: {TYPOGRAPHY['FONT_FAMILY']};
-                    color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
-                    font-size: 1.1rem;
-                    font-weight: 600;
-                    margin: 0 0 0.5rem 0;
-                ">Q4: October-December</h5>
-                <ul style="
-                    font-family: {TYPOGRAPHY['FONT_FAMILY']};
-                    font-size: {TYPOGRAPHY['BODY']['SMALL']['size']};
-                    color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
-                    padding-left: 1.2rem;
-                    margin: 0;
-                ">
-                    <li>Annual price adjustments</li>
-                    <li>Client contract renewals</li>
-                    <li>Year-end performance review</li>
-                    <li>Next year planning</li>
-                </ul>
-            </div>
-        </div>
-        """
-        
-        st.markdown(calendar_content, unsafe_allow_html=True)
-        
-        # Create pricing performance summary chart
-        st.markdown(f"""
-        <h3 style="
-            font-family: {TYPOGRAPHY['FONT_FAMILY']};
-            color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
-            font-size: {TYPOGRAPHY['HEADING']['H3']['size']};
-            font-weight: {TYPOGRAPHY['HEADING']['H3']['weight']};
-            margin: 1.5rem 0 1rem 0;
-        ">Pricing Performance Summary</h3>
-        """, unsafe_allow_html=True)
-        
-        # Create a scatter plot of won and lost bids with CPI vs efficiency
-        if not engineered_data.empty and 'CPI_Efficiency' in engineered_data.columns:
-            fig = go.Figure()
-            
-            # Add Won data
-            fig.add_trace(go.Scatter(
-                x=won_engineered['CPI_Efficiency'],
-                y=won_engineered['CPI'],
-                mode='markers',
-                marker=dict(
-                    color=COLOR_SYSTEM['CHARTS']['WON'],
-                    size=10,
-                    opacity=0.7,
-                    line=dict(width=1, color=COLOR_SYSTEM['NEUTRAL']['WHITE'])
-                ),
-                name='Won Bids',
-                hovertemplate='<b>Won Bid</b><br>Efficiency: %{x:.2f}<br>CPI: $%{y:.2f}<br>IR: %{customdata[0]:.1f}%<br>LOI: %{customdata[1]:.1f} min<br>Completes: %{customdata[2]}<extra></extra>',
-                customdata=won_engineered[['IR', 'LOI', 'Completes']]
-            ))
-            
-            # Add Lost data
-            fig.add_trace(go.Scatter(
-                x=lost_engineered['CPI_Efficiency'],
-                y=lost_engineered['CPI'],
-                mode='markers',
-                marker=dict(
-                    color=COLOR_SYSTEM['CHARTS']['LOST'],
-                    size=10,
-                    opacity=0.7,
-                    line=dict(width=1, color=COLOR_SYSTEM['NEUTRAL']['WHITE'])
-                ),
-                name='Lost Bids',
-                hovertemplate='<b>Lost Bid</b><br>Efficiency: %{x:.2f}<br>CPI: $%{y:.2f}<br>IR: %{customdata[0]:.1f}%<br>LOI: %{customdata[1]:.1f} min<br>Completes: %{customdata[2]}<extra></extra>',
-                customdata=lost_engineered[['IR', 'LOI', 'Completes']]
-            ))
-            
-            # Add a reference line representing the optimal pricing curve
-            x_range = np.linspace(
-                min(engineered_data['CPI_Efficiency'].min() * 0.9, 0.1),
-                engineered_data['CPI_Efficiency'].max() * 1.1,
-                100
-            )
-            
-            # Create a theoretical optimal pricing curve (inverse relationship)
-            optimal_curve = 20 / (x_range + 1) + 3
-            
-            fig.add_trace(go.Scatter(
-                x=x_range,
-                y=optimal_curve,
-                mode='lines',
-                line=dict(
-                    color=COLOR_SYSTEM['ACCENT']['YELLOW'],
-                    width=3,
-                    dash='dash'
-                ),
-                name='Optimal Pricing Curve',
-                hovertemplate='Efficiency: %{x:.2f}<br>Optimal CPI: $%{y:.2f}<extra></extra>'
-            ))
-            
-            # Apply consistent styling
-            fig = apply_chart_styling(
-                fig,
-                title='Efficiency vs CPI Analysis',
-                height=600
-            )
-            
-            # Update layout
-            fig.update_layout(
-                xaxis_title='Efficiency Metric',
-                yaxis_title='CPI ($)'
-            )
-            
-            # Add insights annotations
-            fig = add_insights_annotation(
-                fig,
-                "The dashed yellow line represents the theoretical optimal pricing curve. Bids falling near this line have the highest chance of success while maintaining profitability.",
-                0.01,
-                0.95,
-                width=250
-            )
-            
-            st.plotly_chart(fig, use_container_width=True)
-            
-            # Add scatter plot explanation
-            scatter_explanation = f"""
             <p style="
                 font-family: {TYPOGRAPHY['FONT_FAMILY']};
                 font-size: {TYPOGRAPHY['BODY']['NORMAL']['size']};
                 color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
             ">
-                This scatter plot visualizes the relationship between project efficiency and CPI pricing.
-                The optimal pricing curve (dashed yellow line) represents the ideal balance between
-                competitive pricing and profitability.
+                <strong>Project parameters:</strong> IR {ir_value:.1f}%, LOI {loi_value:.1f} min, Sample size {completes_value}
             </p>
             <p style="
                 font-family: {TYPOGRAPHY['FONT_FAMILY']};
                 font-size: {TYPOGRAPHY['BODY']['NORMAL']['size']};
                 color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
-                margin-top: 0.75rem;
+                margin-top: 0.5rem;
             ">
-                <strong>Key findings:</strong>
+                <strong>Recommended price range:</strong>
+            """
+            if pricing_category == "Competitive":
+                min_price = predicted_cpi * 0.95
+                max_price = similar_won_avg * 1.1
+                recommendation_content += f"""
+                ${min_price:.2f} - ${max_price:.2f}
+                </p>
+                <p style="
+                    font-family: {TYPOGRAPHY['FONT_FAMILY']};
+                    font-size: {TYPOGRAPHY['BODY']['NORMAL']['size']};
+                    color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
+                    margin-top: 0.5rem;
+                ">
+                    This pricing is in line with historical won bids for similar projects.
+                    You have flexibility to slightly increase price while remaining competitive.
+                </p>
+                """
+            elif pricing_category == "High Risk":
+                min_price = similar_won_avg * 0.9
+                max_price = similar_won_avg * 1.05
+                recommendation_content += f"""
+                ${min_price:.2f} - ${max_price:.2f} <span style="color: {COLOR_SYSTEM['ACCENT']['RED']};">(Reduce from predicted)</span>
+                </p>
+                <p style="
+                    font-family: {TYPOGRAPHY['FONT_FAMILY']};
+                    font-size: {TYPOGRAPHY['BODY']['NORMAL']['size']};
+                    color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
+                    margin-top: 0.5rem;
+                ">
+                    <strong>Warning:</strong> The predicted price is close to or above historically lost bids.
+                    Consider reducing the price to improve win probability.
+                </p>
+                """
+            else:
+                min_price = predicted_cpi * 0.95
+                max_price = predicted_cpi * 1.05
+                recommendation_content += f"""
+                ${min_price:.2f} - ${max_price:.2f}
+                </p>
+                <p style="
+                    font-family: {TYPOGRAPHY['FONT_FAMILY']};
+                    font-size: {TYPOGRAPHY['BODY']['NORMAL']['size']};
+                    color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
+                    margin-top: 0.5rem;
+                ">
+                    This pricing falls between historical won and lost bids.
+                    Consider factors such as client relationship, competition, and strategic importance.
+                </p>
+                """
+            render_card(
+                title="Pricing Recommendation", 
+                content=recommendation_content,
+                accent_color=pricing_color
+            )
+            
+            if 'all_model_predictions' in st.session_state:
+                fig = create_prediction_comparison_chart(
+                    st.session_state['all_model_predictions'],
+                    similar_won_avg,
+                    similar_lost_avg
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            
+            st.markdown(f"""
+            <h4 style="
+                font-family: {TYPOGRAPHY['FONT_FAMILY']};
+                color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
+                font-size: {TYPOGRAPHY['HEADING']['H4']['size']};
+                font-weight: {TYPOGRAPHY['HEADING']['H4']['weight']};
+                margin: 1.5rem 0 0.5rem 0;
+            ">Project Profitability Calculator</h4>
+            """, unsafe_allow_html=True)
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                custom_cpi = st.number_input(
+                    "Custom CPI ($)",
+                    min_value=0.0,
+                    max_value=float(data['CPI'].max() * 1.5),
+                    value=float(predicted_cpi),
+                    step=0.1,
+                    format="%.2f",
+                    help="Enter a custom CPI to calculate project profitability"
+                )
+            with col2:
+                cost_per_complete = st.number_input(
+                    "Cost Per Complete ($)",
+                    min_value=0.0,
+                    max_value=float(custom_cpi * 0.95),
+                    value=float(custom_cpi * 0.75),
+                    step=0.1,
+                    format="%.2f",
+                    help="Estimated cost to your company per complete"
+                )
+            
+            total_revenue = custom_cpi * completes_value
+            total_cost = cost_per_complete * completes_value
+            profit = total_revenue - total_cost
+            profit_margin = (profit / total_revenue) * 100 if total_revenue > 0 else 0
+            
+            profitability_metrics = [
+                {
+                    "label": "Total Revenue",
+                    "value": f"${total_revenue:.2f}",
+                    "delta": None
+                },
+                {
+                    "label": "Estimated Cost",
+                    "value": f"${total_cost:.2f}",
+                    "delta": None
+                },
+                {
+                    "label": "Profit",
+                    "value": f"${profit:.2f}",
+                    "delta": f"{profit_margin:.1f}%",
+                    "delta_color": "normal"
+                }
+            ]
+            metrics_row(profitability_metrics)
+            
+            fig = go.Figure(go.Indicator(
+                mode="gauge+number",
+                value=profit_margin,
+                domain={'x': [0, 1], 'y': [0, 1]},
+                title={'text': "Profit Margin (%)", 'font': {'size': 24, 'family': TYPOGRAPHY['FONT_FAMILY']}},
+                gauge={
+                    'axis': {'range': [0, 50], 'tickwidth': 1, 'tickcolor': COLOR_SYSTEM['NEUTRAL']['DARKER']},
+                    'bar': {'color': COLOR_SYSTEM['ACCENT']['GREEN']},
+                    'bgcolor': COLOR_SYSTEM['NEUTRAL']['LIGHTEST'],
+                    'borderwidth': 2,
+                    'bordercolor': COLOR_SYSTEM['NEUTRAL']['LIGHT'],
+                    'steps': [
+                        {'range': [0, 15], 'color': COLOR_SYSTEM['ACCENT']['RED']},
+                        {'range': [15, 25], 'color': COLOR_SYSTEM['ACCENT']['YELLOW']},
+                        {'range': [25, 50], 'color': COLOR_SYSTEM['ACCENT']['GREEN']}
+                    ],
+                    'threshold': {
+                        'line': {'color': COLOR_SYSTEM['NEUTRAL']['DARKEST'], 'width': 4},
+                        'thickness': 0.75,
+                        'value': profit_margin
+                    }
+                }
+            ))
+            fig.update_layout(
+                height=300,
+                margin=dict(l=20, r=20, t=50, b=20),
+                font=dict(family=TYPOGRAPHY['FONT_FAMILY'])
+            )
+            st.plotly_chart(fig, use_container_width=True)
+            
+            if profit_margin < 15:
+                margin_category = "Low"
+                margin_color = COLOR_SYSTEM['ACCENT']['RED']
+                margin_message = "This profit margin is below the recommended minimum of 15%."
+            elif profit_margin < 25:
+                margin_category = "Moderate"
+                margin_color = COLOR_SYSTEM['ACCENT']['YELLOW']
+                margin_message = "This profit margin is acceptable but could be improved."
+            else:
+                margin_category = "Healthy"
+                margin_color = COLOR_SYSTEM['ACCENT']['GREEN']
+                margin_message = "This profit margin is healthy and above the target threshold."
+            
+            profitability_content = f"""
+            <div style="
+                display: flex;
+                align-items: center;
+                margin-bottom: 1rem;
+            ">
+                <div style="
+                    width: 20px;
+                    height: 20px;
+                    border-radius: 50%;
+                    background-color: {margin_color};
+                    margin-right: 10px;
+                "></div>
+                <h4 style="
+                    margin: 0;
+                    color: {margin_color};
+                    font-family: {TYPOGRAPHY['FONT_FAMILY']};
+                    font-size: 1.2rem;
+                    font-weight: 600;
+                ">
+                    {margin_category} Profit Margin
+                </h4>
+            </div>
+            <p style="
+                font-family: {TYPOGRAPHY['FONT_FAMILY']};
+                font-size: {TYPOGRAPHY['BODY']['NORMAL']['size']};
+                color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
+            ">
+                {margin_message}
+            </p>
+            <p style="
+                font-family: {TYPOGRAPHY['FONT_FAMILY']};
+                font-size: {TYPOGRAPHY['BODY']['NORMAL']['size']};
+                color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
+                margin-top: 0.5rem;
+            ">
+                <strong>Project summary:</strong>
             </p>
             <ul style="
                 font-family: {TYPOGRAPHY['FONT_FAMILY']};
                 font-size: {TYPOGRAPHY['BODY']['NORMAL']['size']};
                 color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
             ">
-                <li><strong>Won bids</strong> tend to cluster near the optimal curve</li>
-                <li><strong>Lost bids</strong> are often priced above the optimal curve</li>
-                <li><strong>High-efficiency projects</strong> show greater price sensitivity</li>
-                <li><strong>Low-efficiency projects</strong> have more pricing flexibility but still need strategic positioning</li>
+                <li><strong>Revenue:</strong> ${total_revenue:.2f} ({custom_cpi:.2f} × {completes_value} completes)</li>
+                <li><strong>Cost:</strong> ${total_cost:.2f} ({cost_per_complete:.2f} × {completes_value} completes)</li>
+                <li><strong>Profit:</strong> ${profit:.2f}</li>
+                <li><strong>Margin:</strong> {profit_margin:.1f}%</li>
             </ul>
-            <p style="
-                font-family: {TYPOGRAPHY['FONT_FAMILY']};
-                font-size: {TYPOGRAPHY['BODY']['NORMAL']['size']};
-                color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
-                margin-top: 0.75rem;
-            ">
-                <strong>Strategic implications:</strong> Adjust your pricing approach based on project efficiency.
-                For high-efficiency projects (right side of chart), prioritize competitive pricing close to the
-                optimal curve. For low-efficiency projects (left side), focus on value-added services to justify
-                necessary higher pricing.
-            </p>
             """
-            
+            if profit_margin < 15:
+                profitability_content += f"""
+                <p style="
+                    font-family: {TYPOGRAPHY['FONT_FAMILY']};
+                    font-size: {TYPOGRAPHY['BODY']['NORMAL']['size']};
+                    color: {COLOR_SYSTEM['ACCENT']['RED']};
+                    margin-top: 0.5rem;
+                ">
+                    <strong>Recommendation:</strong> Consider increasing the CPI to improve profitability
+                    or seek ways to reduce costs.
+                </p>
+                """
+            elif pricing_category == "High Risk" and profit_margin > 30:
+                profitability_content += f"""
+                <p style="
+                    font-family: {TYPOGRAPHY['FONT_FAMILY']};
+                    font-size: {TYPOGRAPHY['BODY']['NORMAL']['size']};
+                    color: {COLOR_SYSTEM['ACCENT']['YELLOW']};
+                    margin-top: 0.5rem;
+                ">
+                    <strong>Strategic consideration:</strong> Your profit margin is high, but your price may
+                    be uncompetitive. Consider reducing price to improve win probability while maintaining
+                    acceptable profitability.
+                </p>
+                """
             render_card(
-                title="Understanding the Pricing Performance Chart", 
-                content=scatter_explanation,
-                accent_color=COLOR_SYSTEM['ACCENT']['YELLOW']
+                title="Profitability Assessment", 
+                content=profitability_content,
+                accent_color=margin_color
             )
-        
-        # Add final summary and next steps
-        st.markdown(f"""
-        <h3 style="
-            font-family: {TYPOGRAPHY['FONT_FAMILY']};
-            color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
-            font-size: {TYPOGRAPHY['HEADING']['H3']['size']};
-            font-weight: {TYPOGRAPHY['HEADING']['H3']['weight']};
-            margin: 1.5rem 0 1rem 0;
-        ">Summary & Next Steps</h3>
-        """, unsafe_allow_html=True)
-        
-        # Create summary card
-        summary_content = f"""
-        <p style="
-            font-family: {TYPOGRAPHY['FONT_FAMILY']};
-            font-size: {TYPOGRAPHY['BODY']['NORMAL']['size']};
-            color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
-        ">
-            This analysis has identified several key opportunities to optimize your pricing strategy:
-        </p>
-        <ol style="
-            font-family: {TYPOGRAPHY['FONT_FAMILY']};
-            font-size: {TYPOGRAPHY['BODY']['NORMAL']['size']};
-            color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
-        ">
-            <li><strong>Implement the optimized pricing formula</strong> to balance competitiveness and profitability</li>
-            <li><strong>Focus sales efforts on high-win-rate segments</strong> identified in the analysis</li>
-            <li><strong>Develop tiered volume discounts</strong> to secure larger projects</li>
-            <li><strong>Create differentiated service packages</strong> for projects with challenging parameters</li>
-            <li><strong>Establish quarterly pricing reviews</strong> to continuously optimize your approach</li>
-        </ol>
-        <p style="
-            font-family: {TYPOGRAPHY['FONT_FAMILY']};
-            font-size: {TYPOGRAPHY['BODY']['NORMAL']['size']};
-            color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
-            margin-top: 0.75rem;
-        ">
-            <strong>Expected results:</strong> Implementation of these recommendations is projected to:
-        </p>
-        <ul style="
-            font-family: {TYPOGRAPHY['FONT_FAMILY']};
-            font-size: {TYPOGRAPHY['BODY']['NORMAL']['size']};
-            color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
-        ">
-            <li>Increase win rate by 5-8 percentage points</li>
-            <li>Maintain or slightly improve profit margins</li>
-            <li>Reduce pricing inconsistencies across similar projects</li>
-            <li>Improve client satisfaction through more transparent pricing</li>
-        </ul>
-        """
-        
-        render_card(
-            title="Strategic Recommendations Summary", 
-            content=summary_content,
-            icon=f'<span style="font-size: 1.5rem; color: {COLOR_SYSTEM["ACCENT"]["BLUE"]};">✅</span>',
-            accent_color=COLOR_SYSTEM['ACCENT']['BLUE']
-        )
-        
-        # Next steps with download button
-        next_steps_content = f"""
-        <p style="
-            font-family: {TYPOGRAPHY['FONT_FAMILY']};
-            font-size: {TYPOGRAPHY['BODY']['NORMAL']['size']};
-            color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
-        ">
-            To implement these recommendations effectively:
-        </p>
-        <ol style="
-            font-family: {TYPOGRAPHY['FONT_FAMILY']};
-            font-size: {TYPOGRAPHY['BODY']['NORMAL']['size']};
-            color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
-        ">
-            <li><strong>Share findings</strong> with the pricing committee and sales team</li>
-            <li><strong>Develop an implementation plan</strong> with clear timelines and responsibilities</li>
-            <li><strong>Create pricing guidance documents</strong> for the sales team</li>
-            <li><strong>Monitor performance metrics</strong> to track impact and make adjustments</li>
-            <li><strong>Schedule the first quarterly review</strong> to assess initial results</li>
-        </ol>
-        """
-        
-        render_card(
-            title="Implementation Next Steps", 
-            content=next_steps_content,
-            icon=f'<span style="font-size: 1.5rem; color: {COLOR_SYSTEM["ACCENT"]["GREEN"]};">🚀</span>',
-            accent_color=COLOR_SYSTEM['ACCENT']['GREEN']
-        )
-        
-        # Add download button for pricing strategy document
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
-            st.download_button(
-                label="📄 Download Pricing Strategy Document",
-                data="# Pricing Strategy Document\n\nThis document contains the detailed pricing strategy and recommendations based on the CPI Analysis Dashboard.\n\n## Optimized Pricing Formula\n\nCPI = Base Rate × IR Factor × LOI Factor × Volume Factor\n\n...",
-                file_name="BidPricing_Strategy_Document.md",
-                mime="text/markdown",
-                key="download-strategy"
-            )
-        
-        # Add disclaimer
-        st.markdown(f"""
-        <div style="
-            font-family: {TYPOGRAPHY['FONT_FAMILY']};
-            font-size: {TYPOGRAPHY['BODY']['SMALL']['size']};
-            color: {COLOR_SYSTEM['NEUTRAL']['DARKER']};
-            font-style: italic;
-            margin-top: 2rem;
-            text-align: center;
-        ">
-            Note: These recommendations are based on historical data and current market conditions.
-            Regular review and adjustment are recommended as market dynamics change.
-        </div>
-        """, unsafe_allow_html=True)
         
     except Exception as e:
-        # Log error
-        logger.error(f"Error in show_insights: {e}", exc_info=True)
-        
-        # Display user-friendly error message
-        st.error(f"An error occurred while generating insights: {str(e)}")
+        logger.error(f"Error in show_prediction: {e}", exc_info=True)
+        st.error(f"An error occurred while generating predictions: {str(e)}")
         st.markdown(f"""
         <div style="
             background-color: {COLOR_SYSTEM['BACKGROUND']['CARD']};
@@ -867,9 +703,11 @@ def show_insights(won_data: pd.DataFrame, lost_data: pd.DataFrame, combined_data
             <p>Please try the following:</p>
             <ul>
                 <li>Refresh the page</li>
-                <li>Check that your data has sufficient records for analysis</li>
-                <li>Ensure all required columns are present in the dataset</li>
-                <li>Try using the filtered dataset if dealing with outliers</li>
+                <li>Try a different model type</li>
+                <li>Ensure your input parameters are within reasonable ranges</li>
+                <li>Check that your data has sufficient records for modeling</li>
             </ul>
         </div>
         """, unsafe_allow_html=True)
+        
+# End of show_prediction function
