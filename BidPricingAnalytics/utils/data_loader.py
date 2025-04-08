@@ -8,14 +8,12 @@ import pandas as pd
 import streamlit as st
 from typing import Dict, Any
 import logging
-from config import INVOICED_JOBS_FILE, LOST_DEALS_FILE, ACCOUNT_SEGMENT_FILE
-
+from config import (INVOICED_JOBS_FILE, LOST_DEALS_FILE, ACCOUNT_SEGMENT_FILE,
+                   FEATURE_ENGINEERING_CONFIG, COLOR_SYSTEM)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
-
-
 
 @st.cache_data(ttl=3600)  # Cache data for 1 hour
 def load_data() -> Dict[str, pd.DataFrame]:
@@ -36,11 +34,63 @@ def load_data() -> Dict[str, pd.DataFrame]:
         ValueError: If data processing fails due to unexpected data structure
     """
     try:
+        progress_placeholder = None
+        progress_bar = None
+        
+        # Check if in Streamlit context for progress reporting
+        in_streamlit = True
+        try:
+            _ = st.empty()
+        except:
+            in_streamlit = False
+            
+        if in_streamlit:
+            progress_placeholder = st.empty()
+            progress_placeholder.markdown(f"""
+            <div style="
+                background-color: {COLOR_SYSTEM['BACKGROUND']['CARD']};
+                border-radius: 0.5rem;
+                padding: 1rem;
+                margin-bottom: 1rem;
+                border-left: 4px solid {COLOR_SYSTEM['ACCENT']['BLUE']};
+            ">
+                <h4 style="margin-top: 0;">Data Loading: Initializing...</h4>
+                <p>Checking data files...</p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            progress_bar = st.progress(0)
+        
         # Check if files exist
         if not os.path.exists(INVOICED_JOBS_FILE):
-            raise FileNotFoundError(f"Could not find the invoiced jobs file: {INVOICED_JOBS_FILE}")
+            error_message = f"Could not find the invoiced jobs file: {INVOICED_JOBS_FILE}"
+            logger.error(error_message)
+            if in_streamlit:
+                progress_placeholder.error(error_message)
+            raise FileNotFoundError(error_message)
+            
         if not os.path.exists(LOST_DEALS_FILE):
-            raise FileNotFoundError(f"Could not find the lost deals file: {LOST_DEALS_FILE}")
+            error_message = f"Could not find the lost deals file: {LOST_DEALS_FILE}"
+            logger.error(error_message)
+            if in_streamlit:
+                progress_placeholder.error(error_message)
+            raise FileNotFoundError(error_message)
+        
+        # Update progress
+        if in_streamlit:
+            progress_bar.progress(10)
+            progress_placeholder.markdown(f"""
+            <div style="
+                background-color: {COLOR_SYSTEM['BACKGROUND']['CARD']};
+                border-radius: 0.5rem;
+                padding: 1rem;
+                margin-bottom: 1rem;
+                border-left: 4px solid {COLOR_SYSTEM['ACCENT']['BLUE']};
+            ">
+                <h4 style="margin-top: 0;">Data Loading: 10%</h4>
+                <p>Loading invoiced jobs data...</p>
+            </div>
+            """, unsafe_allow_html=True)
         
         # Load invoiced jobs data (Won deals)
         logger.info(f"Loading invoiced jobs data from {INVOICED_JOBS_FILE}")
@@ -48,6 +98,22 @@ def load_data() -> Dict[str, pd.DataFrame]:
         
         # Log column names for debugging
         logger.debug(f"Columns in invoiced_df: {invoiced_df.columns.tolist()}")
+        
+        # Update progress
+        if in_streamlit:
+            progress_bar.progress(25)
+            progress_placeholder.markdown(f"""
+            <div style="
+                background-color: {COLOR_SYSTEM['BACKGROUND']['CARD']};
+                border-radius: 0.5rem;
+                padding: 1rem;
+                margin-bottom: 1rem;
+                border-left: 4px solid {COLOR_SYSTEM['ACCENT']['BLUE']};
+            ">
+                <h4 style="margin-top: 0;">Data Loading: 25%</h4>
+                <p>Processing invoiced jobs data...</p>
+            </div>
+            """, unsafe_allow_html=True)
         
         # Rename columns to remove spaces
         invoiced_df = invoiced_df.rename(columns={
@@ -84,9 +150,41 @@ def load_data() -> Dict[str, pd.DataFrame]:
         # Add type column
         won_df['Type'] = 'Won'
         
+        # Update progress
+        if in_streamlit:
+            progress_bar.progress(40)
+            progress_placeholder.markdown(f"""
+            <div style="
+                background-color: {COLOR_SYSTEM['BACKGROUND']['CARD']};
+                border-radius: 0.5rem;
+                padding: 1rem;
+                margin-bottom: 1rem;
+                border-left: 4px solid {COLOR_SYSTEM['ACCENT']['BLUE']};
+            ">
+                <h4 style="margin-top: 0;">Data Loading: 40%</h4>
+                <p>Loading lost deals data...</p>
+            </div>
+            """, unsafe_allow_html=True)
+        
         # Load lost deals data
         logger.info(f"Loading lost deals data from {LOST_DEALS_FILE}")
         lost_df_raw = pd.read_excel(LOST_DEALS_FILE)
+        
+        # Update progress
+        if in_streamlit:
+            progress_bar.progress(55)
+            progress_placeholder.markdown(f"""
+            <div style="
+                background-color: {COLOR_SYSTEM['BACKGROUND']['CARD']};
+                border-radius: 0.5rem;
+                padding: 1rem;
+                margin-bottom: 1rem;
+                border-left: 4px solid {COLOR_SYSTEM['ACCENT']['BLUE']};
+            ">
+                <h4 style="margin-top: 0;">Data Loading: 55%</h4>
+                <p>Processing lost deals data...</p>
+            </div>
+            """, unsafe_allow_html=True)
         
         # Filter for Sample items only
         lost_df = lost_df_raw[lost_df_raw['Item'] == 'Sample'].copy()
@@ -111,8 +209,23 @@ def load_data() -> Dict[str, pd.DataFrame]:
         # Add type column
         lost_df['Type'] = 'Lost'
         
+        # Update progress
+        if in_streamlit:
+            progress_bar.progress(70)
+            progress_placeholder.markdown(f"""
+            <div style="
+                background-color: {COLOR_SYSTEM['BACKGROUND']['CARD']};
+                border-radius: 0.5rem;
+                padding: 1rem;
+                margin-bottom: 1rem;
+                border-left: 4px solid {COLOR_SYSTEM['ACCENT']['BLUE']};
+            ">
+                <h4 style="margin-top: 0;">Data Loading: 70%</h4>
+                <p>Loading and processing client segment data...</p>
+            </div>
+            """, unsafe_allow_html=True)
+            
         # Try to load account segment data
-        
         if os.path.exists(ACCOUNT_SEGMENT_FILE):
             logger.info(f"Loading account segment data from {ACCOUNT_SEGMENT_FILE}")
             try:
@@ -131,7 +244,6 @@ def load_data() -> Dict[str, pd.DataFrame]:
                 won_df['Client'] = won_df['Client'].str.strip().str.upper()
                 lost_df['Client'] = lost_df['Client'].str.strip().str.upper()
 
-                
                 # Merge segments with won and lost dataframes
                 won_df = pd.merge(
                     won_df, 
@@ -155,6 +267,22 @@ def load_data() -> Dict[str, pd.DataFrame]:
             except Exception as e:
                 logger.warning(f"Failed to load or merge segment data: {e}")
         
+        # Update progress
+        if in_streamlit:
+            progress_bar.progress(85)
+            progress_placeholder.markdown(f"""
+            <div style="
+                background-color: {COLOR_SYSTEM['BACKGROUND']['CARD']};
+                border-radius: 0.5rem;
+                padding: 1rem;
+                margin-bottom: 1rem;
+                border-left: 4px solid {COLOR_SYSTEM['ACCENT']['BLUE']};
+            ">
+                <h4 style="margin-top: 0;">Data Loading: 85%</h4>
+                <p>Filtering and preprocessing data...</p>
+            </div>
+            """, unsafe_allow_html=True)
+        
         # Convert CPI columns to numeric before filtering
         won_df['CPI'] = pd.to_numeric(won_df['CPI'], errors='coerce')
         lost_df['CPI'] = pd.to_numeric(lost_df['CPI'], errors='coerce')
@@ -172,12 +300,14 @@ def load_data() -> Dict[str, pd.DataFrame]:
         logger.info(f"Won deals count: {len(won_df)}")
         logger.info(f"Lost deals count: {len(lost_df)}")
         
-        # Filter out extreme values (over 95th percentile)
-        won_percentile_95 = won_df['CPI'].quantile(0.95)
-        lost_percentile_95 = lost_df['CPI'].quantile(0.95)
+        # Filter out extreme values based on config
+        outlier_threshold = FEATURE_ENGINEERING_CONFIG.get('outlier_threshold', 0.95)
         
-        won_df_filtered = won_df[won_df['CPI'] <= won_percentile_95]
-        lost_df_filtered = lost_df[lost_df['CPI'] <= lost_percentile_95]
+        won_percentile = won_df['CPI'].quantile(outlier_threshold)
+        lost_percentile = lost_df['CPI'].quantile(outlier_threshold)
+        
+        won_df_filtered = won_df[won_df['CPI'] <= won_percentile]
+        lost_df_filtered = lost_df[lost_df['CPI'] <= lost_percentile]
         
         # Determine common columns for combined dataset
         common_columns = ['Client', 'CPI', 'IR', 'LOI', 'Completes', 'Revenue', 'Country', 'Type']
@@ -198,6 +328,55 @@ def load_data() -> Dict[str, pd.DataFrame]:
             ignore_index=True
         )
         
+        # Update progress
+        if in_streamlit:
+            progress_bar.progress(95)
+            progress_placeholder.markdown(f"""
+            <div style="
+                background-color: {COLOR_SYSTEM['BACKGROUND']['CARD']};
+                border-radius: 0.5rem;
+                padding: 1rem;
+                margin-bottom: 1rem;
+                border-left: 4px solid {COLOR_SYSTEM['ACCENT']['GREEN']};
+            ">
+                <h4 style="margin-top: 0;">Data Loading: 95%</h4>
+                <p>Finalizing data preparation...</p>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        # Log data shapes after filtering
+        logger.info(f"Won deals filtered count: {len(won_df_filtered)}")
+        logger.info(f"Lost deals filtered count: {len(lost_df_filtered)}")
+        logger.info(f"Combined filtered count: {len(combined_df_filtered)}")
+        
+        # Calculate filtering stats for logging
+        won_filter_pct = (len(won_df) - len(won_df_filtered)) / len(won_df) * 100 if len(won_df) > 0 else 0
+        lost_filter_pct = (len(lost_df) - len(lost_df_filtered)) / len(lost_df) * 100 if len(lost_df) > 0 else 0
+        
+        logger.info(f"Won deals filtered out: {won_filter_pct:.1f}% (CPI > {won_percentile:.2f})")
+        logger.info(f"Lost deals filtered out: {lost_filter_pct:.1f}% (CPI > {lost_percentile:.2f})")
+        
+        # Complete progress
+        if in_streamlit:
+            progress_bar.progress(100)
+            progress_placeholder.markdown(f"""
+            <div style="
+                background-color: {COLOR_SYSTEM['BACKGROUND']['CARD']};
+                border-radius: 0.5rem;
+                padding: 1rem;
+                margin-bottom: 1rem;
+                border-left: 4px solid {COLOR_SYSTEM['ACCENT']['GREEN']};
+            ">
+                <h4 style="margin-top: 0;">Data Loading: Complete</h4>
+                <p>Successfully loaded {len(won_df)} won bids and {len(lost_df)} lost bids.</p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Clear progress bar after 1 second
+            import time
+            time.sleep(1)
+            progress_bar.empty()
+        
         # Return all datasets
         return {
             'won': won_df,
@@ -210,6 +389,31 @@ def load_data() -> Dict[str, pd.DataFrame]:
     
     except Exception as e:
         logger.error(f"Error in load_data: {e}", exc_info=True)
+        
+        # Show error message in Streamlit if available
+        if 'progress_placeholder' in locals() and progress_placeholder is not None:
+            progress_placeholder.error(f"Error loading data: {str(e)}")
+            
+            # Provide additional help based on error type
+            if isinstance(e, FileNotFoundError):
+                progress_placeholder.markdown(f"""
+                <div style="
+                    background-color: {COLOR_SYSTEM['BACKGROUND']['CARD']};
+                    border-radius: 0.5rem;
+                    padding: 1rem;
+                    margin-top: 1rem;
+                    border-left: 4px solid {COLOR_SYSTEM['ACCENT']['YELLOW']};
+                ">
+                    <h4 style="margin-top: 0;">Troubleshooting Help</h4>
+                    <p>Make sure the following data files exist in the correct location:</p>
+                    <ul>
+                        <li><code>{os.path.basename(INVOICED_JOBS_FILE)}</code></li>
+                        <li><code>{os.path.basename(LOST_DEALS_FILE)}</code></li>
+                    </ul>
+                    <p>Check that the file paths in <code>config.py</code> are correct.</p>
+                </div>
+                """, unsafe_allow_html=True)
+        
         raise
 
 if __name__ == "__main__":

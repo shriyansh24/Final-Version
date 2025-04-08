@@ -8,22 +8,15 @@ import numpy as np
 import logging
 from typing import Dict, List, Tuple, Union
 
+# Import configuration for bin settings
+from config import (IR_BINS, IR_BIN_LABELS, 
+                    LOI_BINS, LOI_BIN_LABELS,
+                    COMPLETES_BINS, COMPLETES_BIN_LABELS,
+                    FEATURE_ENGINEERING_CONFIG)
+
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
-
-# Define bin configurations
-IR_BINS = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
-IR_BIN_LABELS = ['0-10', '10-20', '20-30', '30-40', '40-50', 
-                '50-60', '60-70', '70-80', '80-90', '90-100']
-
-LOI_BINS = [0, 5, 10, 15, 20, float('inf')]
-LOI_BIN_LABELS = ['Very Short (1-5 min)', 'Short (6-10 min)', 
-                 'Medium (11-15 min)', 'Long (16-20 min)', 'Very Long (20+ min)']
-
-COMPLETES_BINS = [0, 100, 500, 1000, float('inf')]
-COMPLETES_BIN_LABELS = ['Small (1-100)', 'Medium (101-500)', 
-                       'Large (501-1000)', 'Very Large (1000+)']
 
 def create_ir_bins(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -125,10 +118,20 @@ def apply_all_bins(df: pd.DataFrame) -> pd.DataFrame:
     Returns:
         pd.DataFrame: Dataframe with all bin columns added
     """
-    df = create_ir_bins(df)
-    df = create_loi_bins(df)
-    df = create_completes_bins(df)
-    return df
+    try:
+        df = create_ir_bins(df)
+        df = create_loi_bins(df)
+        df = create_completes_bins(df)
+        
+        # Log success for monitoring
+        logger.info(f"Successfully applied all bins to dataframe with {len(df)} rows")
+        
+        return df
+        
+    except Exception as e:
+        logger.error(f"Error in apply_all_bins: {e}", exc_info=True)
+        # Return original dataframe if binning fails
+        return df
 
 def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -148,23 +151,58 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
             df[col] = pd.to_numeric(df[col], errors='coerce')
         
         # Drop rows with missing values in key columns
+        original_rows = len(df)
         df = df.dropna(subset=['IR', 'LOI', 'Completes', 'CPI'])
+        dropped_rows = original_rows - len(df)
+        if dropped_rows > 0:
+            logger.warning(f"Dropped {dropped_rows} rows with missing values in key columns")
         
         # Basic features
         df['IR_LOI_Ratio'] = df['IR'] / df['LOI']
         df['IR_Completes_Ratio'] = df['IR'] / df['Completes']
         df['LOI_Completes_Ratio'] = df['LOI'] / df['Completes']
         
-        # Advanced features
-        df['IR_LOI_Product'] = df['IR'] * df['LOI']  # Interaction term
-        df['CPI_per_Minute'] = df['CPI'] / df['LOI']  # Cost per minute
-        df['Log_Completes'] = np.log1p(df['Completes'])  # Log transformation for skewed distribution
+        # Check if we should create interaction terms
+        if FEATURE_ENGINEERING_CONFIG.get('create_interaction_terms', True):
+            df['IR_LOI_Product'] = df['IR'] * df['LOI']  # Interaction term
+            df['CPI_per_Minute'] = df['CPI'] / df['LOI']  # Cost per minute
+            
+            # Add interaction between IR and Completes
+            df['IR_Completes_Product'] = df['IR'] * df['Completes']
+            
+            logger.info("Created interaction terms for feature engineering")
         
-        # Efficiency metric
+        # Check if we should create log transforms
+        if FEATURE_ENGINEERING_CONFIG.get('create_log_transforms', True):
+            df['Log_Completes'] = np.log1p(df['Completes'])  # Log transformation for skewed distribution
+            
+            # Add log transforms for other important variables
+            df['Log_IR'] = np.log1p(df['IR'])
+            df['Log_LOI'] = np.log1p(df['LOI'])
+            df['Log_CPI'] = np.log1p(df['CPI'])
+            
+            logger.info("Created log transformations for feature engineering")
+        
+        # Efficiency metric (always created)
         df['CPI_Efficiency'] = (df['IR'] / 100) * (1 / df['LOI']) * df['Completes']
+        
+        # Create normalized versions of key variables
+        df['IR_Normalized'] = (df['IR'] - df['IR'].mean()) / df['IR'].std()
+        df['LOI_Normalized'] = (df['LOI'] - df['LOI'].mean()) / df['LOI'].std()
+        df['Completes_Normalized'] = (df['Completes'] - df['Completes'].mean()) / df['Completes'].std()
         
         # Replace any infinite values that might have been created during division
         df = df.replace([np.inf, -np.inf], np.nan)
+        
+        # Fill any NaN values created during feature engineering with appropriate values
+        # Use median for ratio metrics
+        for col in ['IR_LOI_Ratio', 'IR_Completes_Ratio', 'LOI_Completes_Ratio', 
+                    'CPI_Efficiency', 'IR_Normalized', 'LOI_Normalized', 'Completes_Normalized']:
+            if col in df.columns and df[col].isna().any():
+                df[col] = df[col].fillna(df[col].median())
+        
+        # Log counts of features created
+        logger.info(f"Feature engineering complete. Created {len(df.columns) - 4} new features.")
         
         return df
     
@@ -176,6 +214,12 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
 def prepare_model_data(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Series]:
     """
     Prepare data for modeling with improved error handling tailored to CPI data.
+    
+    Args:
+        df (pd.DataFrame): Input dataframe with all required columns
+        
+    Returns:
+        Tuple[pd.DataFrame, pd.Series]: Features dataframe (X) and target series (y)
     """
     try:
         logger.info("Starting data preparation for modeling")
@@ -207,49 +251,76 @@ def prepare_model_data(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Series]:
         
         # Create engineered features specific to CPI analysis
         try:
-            df['IR_LOI_Ratio'] = df['IR'] / df['LOI']
-            df['IR_Completes_Ratio'] = df['IR'] / df['Completes']
-            df['LOI_Completes_Ratio'] = df['LOI'] / df['Completes']
-            df['IR_LOI_Product'] = df['IR'] * df['LOI']
-            df['Log_Completes'] = np.log1p(df['Completes'])
+            # Apply standard feature engineering
+            df = engineer_features(df)
             
+            # Add bin columns if not present
             if 'IR_Bin' not in df.columns:
-                from utils.data_processor import create_ir_bins
-                df = create_ir_bins(df)
+                df = apply_all_bins(df)
                 
             logger.info("Successfully created engineered features")
         except Exception as e:
             logger.warning(f"Error in feature engineering: {e}")
         
+        # Select base features for model
         feature_cols = [
             'IR', 'LOI', 'Completes', 'IR_LOI_Ratio', 
             'IR_Completes_Ratio', 'Log_Completes', 'Type'
         ]
+        
+        # Add additional engineered features if available
+        additional_cols = [
+            'IR_LOI_Product', 'CPI_per_Minute', 'Log_IR',
+            'Log_LOI', 'IR_Normalized', 'LOI_Normalized',
+            'Completes_Normalized', 'IR_Completes_Product'
+        ]
+        
+        for col in additional_cols:
+            if col in df.columns:
+                feature_cols.append(col)
+        
+        # Filter to available columns only
         available_cols = [col for col in feature_cols if col in df.columns]
         
+        # Handle categorical variables
         if 'Type' in available_cols:
             valid_types = ['Won', 'Lost']
             invalid_types = df[~df['Type'].isin(valid_types)]['Type'].unique()
             if len(invalid_types) > 0:
                 logger.warning(f"Found invalid Type values: {invalid_types}. Removing these rows.")
                 df = df[df['Type'].isin(valid_types)]
+            
+            # Create dummy variables
             df = pd.get_dummies(df, columns=['Type'], drop_first=True)
+            
+            # Update available columns
             if 'Type_Won' in df.columns:
                 available_cols = [col for col in available_cols if col != 'Type'] + ['Type_Won']
         
+        # Add segment information if available
         if 'Segment' in df.columns and df['Segment'].notna().any():
             logger.info("Client segment data found, adding to model features")
+            
+            # Fill missing Segment values
+            df['Segment'] = df['Segment'].fillna('Unknown')
+            
+            # Create dummy variables
             df = pd.get_dummies(df, columns=['Segment'], drop_first=True)
+            
+            # Add segment columns to features
             segment_cols = [col for col in df.columns if col.startswith('Segment_')]
             available_cols.extend(segment_cols)
         
+        # Filter features and target
         X = df[available_cols].copy()
         y = df['CPI']
         
+        # Remove rows with missing values
         mask = X.notna().all(axis=1) & y.notna()
         X = X[mask]
         y = y[mask]
         
+        # Check if we have enough data
         if len(X) < 10:
             logger.error(f"Too few samples after preprocessing: {len(X)}")
             return pd.DataFrame(), pd.Series()
@@ -262,7 +333,6 @@ def prepare_model_data(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Series]:
     except Exception as e:
         logger.error(f"Error in prepare_model_data: {e}", exc_info=True)
         return pd.DataFrame(), pd.Series()
-
 
 def get_data_summary(df: pd.DataFrame) -> Dict[str, Dict[str, float]]:
     """
@@ -293,44 +363,23 @@ def get_data_summary(df: pd.DataFrame) -> Dict[str, Dict[str, float]]:
                 'CPI_75th': group['CPI'].quantile(0.75),
                 'CPI_95th': group['CPI'].quantile(0.95)
             }
+            
+            # Add additional useful metrics for dashboard
+            summary[name]['IR_LOI_Ratio_Avg'] = (group['IR'] / group['LOI']).mean()
+            summary[name]['Cost_per_Min'] = (group['CPI'] / group['LOI']).mean()
+            summary[name]['Cost_per_Complete'] = (group['CPI'] * group['Completes']).mean()
+            
+            # Add standard deviations for key metrics
+            summary[name]['CPI_StdDev'] = group['CPI'].std()
+            summary[name]['IR_StdDev'] = group['IR'].std()
+            summary[name]['LOI_StdDev'] = group['LOI'].std()
+            
+            # Calculate the Efficiency Metric
+            group_eff = (group['IR'] / 100) * (1 / group['LOI']) * group['Completes']
+            summary[name]['Efficiency_Metric_Avg'] = group_eff.mean()
+            summary[name]['Efficiency_Metric_Median'] = group_eff.median()
     
     except Exception as e:
         logger.error(f"Error in get_data_summary: {e}", exc_info=True)
     
     return summary
-
-if __name__ == "__main__":
-    # Test the data processing functions with a sample dataframe
-    try:
-        import pandas as pd
-        
-        # Create a sample dataframe
-        data = {
-            'CPI': [10.5, 12.3, 8.7, 15.2, 9.8],
-            'IR': [25, 35, 45, 15, 55],
-            'LOI': [10, 15, 8, 20, 12],
-            'Completes': [500, 300, 800, 200, 600],
-            'Type': ['Won', 'Lost', 'Won', 'Lost', 'Won']
-        }
-        
-        df = pd.DataFrame(data)
-        
-        # Test binning
-        binned_df = apply_all_bins(df)
-        print("Binned DataFrame:")
-        print(binned_df.head())
-        
-        # Test feature engineering
-        engineered_df = engineer_features(df)
-        print("\nEngineered DataFrame:")
-        print(engineered_df.head())
-        
-        # Test model data preparation
-        X, y = prepare_model_data(engineered_df)
-        print("\nModel Input X:")
-        print(X.head())
-        print("\nModel Target y:")
-        print(y.head())
-        
-    except Exception as e:
-        print(f"Error testing data processor: {e}")
