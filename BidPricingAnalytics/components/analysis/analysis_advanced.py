@@ -71,34 +71,50 @@ def show_loi_analysis(won_data: pd.DataFrame, lost_data: pd.DataFrame, tab) -> N
             customdata=lost_data[['IR']]
         ))
         
-        # Add trend lines
-        # Won trend line
-        won_trend_x = np.linspace(won_data['LOI'].min(), won_data['LOI'].max(), 100)
-        won_coeffs = np.polyfit(won_data['LOI'], won_data['CPI'], 1)
-        won_trend_y = np.polyval(won_coeffs, won_trend_x)
-        
-        fig.add_trace(go.Scatter(
-            x=won_trend_x,
-            y=won_trend_y,
-            mode='lines',
-            line=dict(color='#3288bd', width=2),
-            name='Won Trend',
-            hoverinfo='skip'
-        ))
-        
-        # Lost trend line
-        lost_trend_x = np.linspace(lost_data['LOI'].min(), lost_data['LOI'].max(), 100)
-        lost_coeffs = np.polyfit(lost_data['LOI'], lost_data['CPI'], 1)
-        lost_trend_y = np.polyval(lost_coeffs, lost_trend_x)
-        
-        fig.add_trace(go.Scatter(
-            x=lost_trend_x,
-            y=lost_trend_y,
-            mode='lines',
-            line=dict(color='#f58518', width=2),
-            name='Lost Trend',
-            hoverinfo='skip'
-        ))
+        # Add trend lines with robust error handling
+        try:
+            # Clean data for trend line calculation
+            valid_won = won_data.dropna(subset=['LOI', 'CPI'])
+            if len(valid_won) > 1:  # Need at least 2 points for a line
+                won_trend_x = np.linspace(valid_won['LOI'].min(), valid_won['LOI'].max(), 100)
+                try:
+                    won_coeffs = np.polyfit(valid_won['LOI'], valid_won['CPI'], 1)
+                    won_trend_y = np.polyval(won_coeffs, won_trend_x)
+                    
+                    fig.add_trace(go.Scatter(
+                        x=won_trend_x,
+                        y=won_trend_y,
+                        mode='lines',
+                        line=dict(color='#3288bd', width=2),
+                        name='Won Trend',
+                        hoverinfo='skip'
+                    ))
+                except np.linalg.LinAlgError:
+                    logger.warning("Could not calculate trend line for Won data due to numerical issues")
+        except Exception as e:
+            logger.warning(f"Error creating Won trend line: {e}")
+
+        try:
+            # Clean data for trend line calculation
+            valid_lost = lost_data.dropna(subset=['LOI', 'CPI'])
+            if len(valid_lost) > 1:  # Need at least 2 points for a line
+                lost_trend_x = np.linspace(valid_lost['LOI'].min(), valid_lost['LOI'].max(), 100)
+                try:
+                    lost_coeffs = np.polyfit(valid_lost['LOI'], valid_lost['CPI'], 1)
+                    lost_trend_y = np.polyval(lost_coeffs, lost_trend_x)
+                    
+                    fig.add_trace(go.Scatter(
+                        x=lost_trend_x,
+                        y=lost_trend_y,
+                        mode='lines',
+                        line=dict(color='#f58518', width=2),
+                        name='Lost Trend',
+                        hoverinfo='skip'
+                    ))
+                except np.linalg.LinAlgError:
+                    logger.warning("Could not calculate trend line for Lost data due to numerical issues")
+        except Exception as e:
+            logger.warning(f"Error creating Lost trend line: {e}")
         
         # Update layout
         fig.update_layout(
@@ -194,42 +210,62 @@ def show_sample_size_analysis(won_data: pd.DataFrame, lost_data: pd.DataFrame, t
             customdata=lost_data[['IR', 'LOI']]
         ))
         
-        # Add trend lines using logarithmic fit (better for sample size relationships)
-        # Won trend
-        won_x = won_data['Completes']
-        won_y = won_data['CPI']
-        won_log_x = np.log(won_x)
-        won_coeffs = np.polyfit(won_log_x, won_y, 1)
-        
-        won_trend_x = np.linspace(won_x.min(), won_x.max(), 100)
-        won_trend_y = won_coeffs[0] * np.log(won_trend_x) + won_coeffs[1]
-        
-        fig.add_trace(go.Scatter(
-            x=won_trend_x,
-            y=won_trend_y,
-            mode='lines',
-            line=dict(color='#3288bd', width=2),
-            name='Won Trend',
-            hoverinfo='skip'
-        ))
-        
-        # Lost trend
-        lost_x = lost_data['Completes']
-        lost_y = lost_data['CPI']
-        lost_log_x = np.log(lost_x)
-        lost_coeffs = np.polyfit(lost_log_x, lost_y, 1)
-        
-        lost_trend_x = np.linspace(lost_x.min(), lost_x.max(), 100)
-        lost_trend_y = lost_coeffs[0] * np.log(lost_trend_x) + lost_coeffs[1]
-        
-        fig.add_trace(go.Scatter(
-            x=lost_trend_x,
-            y=lost_trend_y,
-            mode='lines',
-            line=dict(color='#f58518', width=2),
-            name='Lost Trend',
-            hoverinfo='skip'
-        ))
+        # Add trend lines using logarithmic fit with robust error handling
+        try:
+            # Clean data for trend line calculation
+            valid_won = won_data.dropna(subset=['Completes', 'CPI'])
+            valid_won = valid_won[valid_won['Completes'] > 0]  # Avoid log(0)
+            
+            if len(valid_won) > 1:  # Need at least 2 points for a line
+                won_x = valid_won['Completes']
+                won_y = valid_won['CPI']
+                won_log_x = np.log(won_x)
+                
+                try:
+                    won_coeffs = np.polyfit(won_log_x, won_y, 1)
+                    won_trend_x = np.linspace(won_x.min(), won_x.max(), 100)
+                    won_trend_y = won_coeffs[0] * np.log(won_trend_x) + won_coeffs[1]
+                    
+                    fig.add_trace(go.Scatter(
+                        x=won_trend_x,
+                        y=won_trend_y,
+                        mode='lines',
+                        line=dict(color='#3288bd', width=2),
+                        name='Won Trend',
+                        hoverinfo='skip'
+                    ))
+                except np.linalg.LinAlgError:
+                    logger.warning("Could not calculate trend line for Won data due to numerical issues")
+        except Exception as e:
+            logger.warning(f"Error creating Won trend line: {e}")
+
+        try:
+            # Clean data for trend line calculation
+            valid_lost = lost_data.dropna(subset=['Completes', 'CPI'])
+            valid_lost = valid_lost[valid_lost['Completes'] > 0]  # Avoid log(0)
+            
+            if len(valid_lost) > 1:  # Need at least 2 points for a line
+                lost_x = valid_lost['Completes']
+                lost_y = valid_lost['CPI']
+                lost_log_x = np.log(lost_x)
+                
+                try:
+                    lost_coeffs = np.polyfit(lost_log_x, lost_y, 1)
+                    lost_trend_x = np.linspace(lost_x.min(), lost_x.max(), 100)
+                    lost_trend_y = lost_coeffs[0] * np.log(lost_trend_x) + lost_coeffs[1]
+                    
+                    fig.add_trace(go.Scatter(
+                        x=lost_trend_x,
+                        y=lost_trend_y,
+                        mode='lines',
+                        line=dict(color='#f58518', width=2),
+                        name='Lost Trend',
+                        hoverinfo='skip'
+                    ))
+                except np.linalg.LinAlgError:
+                    logger.warning("Could not calculate trend line for Lost data due to numerical issues")
+        except Exception as e:
+            logger.warning(f"Error creating Lost trend line: {e}")
         
         # Update layout
         fig.update_layout(
@@ -362,25 +398,41 @@ def show_multi_factor_analysis(won_data: pd.DataFrame, lost_data: pd.DataFrame, 
                 if diff_data:
                     diff_df = pd.DataFrame(diff_data)
                     diff_pivot = diff_df.pivot(index='IR_Bin', columns='LOI_Bin', values='Difference')
-                    fig = px.imshow(
-                        diff_pivot,
-                        labels=dict(x="LOI Bin", y="IR Bin", color="CPI Difference ($)"),
-                        x=diff_pivot.columns,
-                        y=diff_pivot.index,
-                        title="CPI Differential: Lost Minus Won",
-                        color_continuous_scale="RdBu_r",
-                        aspect="auto",
-                        text_auto='.2f'
-                    )
+                    
+                    # Replace px.imshow with go.Heatmap
+                    z_values = diff_pivot.fillna(0).values
+                    x_labels = diff_pivot.columns.tolist()
+                    y_labels = diff_pivot.index.tolist()
+                    
+                    fig = go.Figure(data=go.Heatmap(
+                        z=z_values,
+                        x=x_labels,
+                        y=y_labels,
+                        colorscale="RdBu_r",
+                        hovertemplate='IR Bin: %{y}<br>LOI Bin: %{x}<br>CPI Difference: $%{z:.2f}<extra></extra>',
+                        text=[[f"${val:.2f}" for val in row] for row in z_values],
+                        texttemplate="%{text}",
+                        colorbar=dict(
+                            title="CPI Diff ($)",
+                            tickprefix="$",
+                            len=0.75
+                        )
+                    ))
+                    
                     fig.update_layout(
+                        title="CPI Differential: Lost Minus Won",
                         height=600,
-                        coloraxis_colorbar=dict(title="CPI Diff ($)", tickprefix="$", len=0.75),
+                        xaxis_title="LOI Bin",
+                        yaxis_title="IR Bin",
                         plot_bgcolor='rgba(255,255,255,1)',
                         paper_bgcolor='rgba(255,255,255,1)',
                         font=dict(family="Arial, sans-serif", size=12, color="black")
                     )
+                    
+                    # Update axes
                     fig.update_xaxes(tickangle=45, title_font=dict(size=14), title_standoff=25)
                     fig.update_yaxes(title_font=dict(size=14), title_standoff=25)
+                    
                     st.plotly_chart(fig, use_container_width=True, key='analysis_heatmap_differential')
                 else:
                     st.info("Not enough matching combinations to create a differential heatmap.")
@@ -388,6 +440,8 @@ def show_multi_factor_analysis(won_data: pd.DataFrame, lost_data: pd.DataFrame, 
             logger.error(f"Error creating differential heatmap: {e}", exc_info=True)
             st.error(f"Could not generate differential visualization: {str(e)}")
 
+        # --- 3D Plot --- 
+    
         # --- 3D Plot ---
         st.subheader("Combined Factor Impact on Total Project Cost")
 

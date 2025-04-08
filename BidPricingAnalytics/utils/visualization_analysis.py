@@ -293,101 +293,66 @@ def create_heatmap(pivot_data: pd.DataFrame, title: str, colorscale: str = None)
         go.Figure: Plotly figure object
     """
     try:
-        # Check if pivot data is empty
-        if pivot_data.empty:
-            logger.warning("Empty pivot data provided for heatmap.")
-
-            # Return an empty figure with a message
+        # Check if pivot data is empty or all zero
+        if pivot_data.empty or (pivot_data == 0).all().all():
             fig = go.Figure()
-            fig.add_annotation(
-                text="No data available for heatmap visualization.",
-                x=0.5,
-                y=0.5,
-                xref="paper",
-                yref="paper",
-                showarrow=False,
-                font=dict(size=16, color="black")
-            )
-            fig.update_layout(title=title, height=600)
+            fig.add_annotation(text="No data available for heatmap visualization", x=0.5, y=0.5, showarrow=False)
             return fig
+            
+        # Set default colorscale if not specified
+        if colorscale is None:
+            colorscale = HEATMAP_COLORSCALE_WON
+            
+        # Handle potential SVD issues by using a simpler approach to heatmap
+        z_values = pivot_data.fillna(0).values
+        x_labels = pivot_data.columns.tolist()
+        y_labels = pivot_data.index.tolist()
         
-        # Check for all zero values
-        if (pivot_data == 0).all().all():
-            logger.warning("All values in pivot data are zero for heatmap.")
-
-            # Return an empty figure with a message
-            fig = go.Figure()
-            fig.add_annotation(
-                text="No data available for heatmap visualization.",
-                x=0.5,
-                y=0.5,
-                xref="paper",
-                yref="paper",
-                showarrow=False,
-                font=dict(size=16, color="black")
+        # Create figure directly with go.Heatmap instead of px.imshow to avoid SVD
+        fig = go.Figure(data=go.Heatmap(
+            z=z_values,
+            x=x_labels,
+            y=y_labels,
+            colorscale=colorscale,
+            hovertemplate='IR Bin: %{y}<br>LOI Bin: %{x}<br>Avg CPI: $%{z:.2f}<extra></extra>',
+            text=[[f"${val:.2f}" for val in row] for row in z_values],
+            texttemplate="%{text}",
+            colorbar=dict(
+                title="Avg CPI ($)",
+                tickprefix="$",
+                len=0.75
             )
-            fig.update_layout(title=title, height=600)
-            return fig
-
-        try:
-            # Use default colorscale if not specified
-            if colorscale is None:
-                colorscale = HEATMAP_COLORSCALE_WON
-                
-            # Create heatmap
-            fig = px.imshow(
-                pivot_data,
-                labels=dict(x="LOI Bin", y="IR Bin", color="Avg CPI ($)"),
-                x=pivot_data.columns,
-                y=pivot_data.index,
-                title=title,
-                color_continuous_scale=colorscale,
-                aspect="auto",
-                text_auto='.2f'  # Show values on cells
-            )
-            
-            # Update layout
-            fig.update_layout(
-                height=600,
-                coloraxis_colorbar=dict(
-                    title="Avg CPI ($)",
-                    tickprefix="$",
-                    len=0.75
-                ),
-                # Improved accessibility
-                plot_bgcolor='rgba(255,255,255,1)',
-                paper_bgcolor='rgba(255,255,255,1)',
-                font=dict(
-                    family="Arial, sans-serif",
-                    size=12,
-                    color="black"
-                )
-            )
-            
-            # Update xaxis properties to handle long text
-            fig.update_xaxes(
-                tickangle=45,
-                title_font=dict(size=14),
-                title_standoff=25
-            )
-            
-            # Update yaxis properties
-            fig.update_yaxes(
-                title_font=dict(size=14),
-                title_standoff=25
-            )
-            
-            # Add a hover template for better interaction
-            fig.update_traces(
-                hovertemplate="IR Bin: %{y}<br>LOI Bin: %{x}<br>Avg CPI: $%{z:.2f}<extra></extra>"
-            )
-            
-            return fig
+        ))
         
-        except Exception as e:
-            logger.error(f"Error creating heatmap figure: {e}", exc_info=True)
-            # Return empty figure
-            return go.Figure()
+        # Update layout
+        fig.update_layout(
+            title=title,
+            height=600,
+            xaxis_title="LOI Bin",
+            yaxis_title="IR Bin",
+            plot_bgcolor='rgba(255,255,255,1)',
+            paper_bgcolor='rgba(255,255,255,1)',
+            font=dict(
+                family="Arial, sans-serif",
+                size=12,
+                color="black"
+            )
+        )
+        
+        # Update xaxis properties
+        fig.update_xaxes(
+            tickangle=45,
+            title_font=dict(size=14),
+            title_standoff=25
+        )
+        
+        # Update yaxis properties
+        fig.update_yaxes(
+            title_font=dict(size=14),
+            title_standoff=25
+        )
+        
+        return fig
     
     except Exception as e:
         logger.error(f"Error in create_heatmap: {e}", exc_info=True)

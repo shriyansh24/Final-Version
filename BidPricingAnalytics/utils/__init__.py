@@ -31,9 +31,11 @@ from .visualization_basic import (
 # Analysis visualizations
 from .visualization_analysis import (
     create_cpi_vs_ir_scatter,
-    create_bar_chart_by_bin,
-    create_heatmap
+    create_bar_chart_by_bin
 )
+
+# Import the robust heatmap implementation from visualization.py
+from .visualization import create_heatmap
 
 # Prediction visualizations
 from .visualization_prediction import (

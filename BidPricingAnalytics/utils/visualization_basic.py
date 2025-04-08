@@ -362,34 +362,50 @@ def create_cpi_efficiency_chart(won_data: pd.DataFrame, lost_data: pd.DataFrame)
             customdata=lost_data[['IR', 'LOI', 'Completes']]
         ))
         
-        # Add trend lines
-        # Won trend line
-        x_range = np.linspace(won_data['CPI_Efficiency'].min(), won_data['CPI_Efficiency'].max(), 100)
-        coeffs = np.polyfit(won_data['CPI_Efficiency'], won_data['CPI'], 1)
-        trend_y = np.polyval(coeffs, x_range)
-        
-        fig.add_trace(go.Scatter(
-            x=x_range,
-            y=trend_y,
-            mode='lines',
-            line=dict(color=WON_COLOR, width=2),
-            name='Won Trend',
-            hoverinfo='skip'
-        ))
-        
-        # Lost trend line
-        x_range = np.linspace(lost_data['CPI_Efficiency'].min(), lost_data['CPI_Efficiency'].max(), 100)
-        coeffs = np.polyfit(lost_data['CPI_Efficiency'], lost_data['CPI'], 1)
-        trend_y = np.polyval(coeffs, x_range)
-        
-        fig.add_trace(go.Scatter(
-            x=x_range,
-            y=trend_y,
-            mode='lines',
-            line=dict(color=LOST_COLOR, width=2),
-            name='Lost Trend',
-            hoverinfo='skip'
-        ))
+        # Add trend lines with robust error handling
+        try:
+            # Won trend line
+            valid_won = won_data.dropna(subset=['CPI_Efficiency', 'CPI'])
+            if len(valid_won) > 1:
+                x_range = np.linspace(valid_won['CPI_Efficiency'].min(), valid_won['CPI_Efficiency'].max(), 100)
+                try:
+                    coeffs = np.polyfit(valid_won['CPI_Efficiency'], valid_won['CPI'], 1)
+                    trend_y = np.polyval(coeffs, x_range)
+                    
+                    fig.add_trace(go.Scatter(
+                        x=x_range,
+                        y=trend_y,
+                        mode='lines',
+                        line=dict(color=WON_COLOR, width=2),
+                        name='Won Trend',
+                        hoverinfo='skip'
+                    ))
+                except np.linalg.LinAlgError:
+                    logger.warning("Could not calculate Won trend line due to numerical issues")
+        except Exception as e:
+            logger.warning(f"Error adding Won trend line: {e}")
+
+        try:
+            # Lost trend line
+            valid_lost = lost_data.dropna(subset=['CPI_Efficiency', 'CPI'])
+            if len(valid_lost) > 1:
+                x_range = np.linspace(valid_lost['CPI_Efficiency'].min(), valid_lost['CPI_Efficiency'].max(), 100)
+                try:
+                    coeffs = np.polyfit(valid_lost['CPI_Efficiency'], valid_lost['CPI'], 1)
+                    trend_y = np.polyval(coeffs, x_range)
+                    
+                    fig.add_trace(go.Scatter(
+                        x=x_range,
+                        y=trend_y,
+                        mode='lines',
+                        line=dict(color=LOST_COLOR, width=2),
+                        name='Lost Trend',
+                        hoverinfo='skip'
+                    ))
+                except np.linalg.LinAlgError:
+                    logger.warning("Could not calculate Lost trend line due to numerical issues")
+        except Exception as e:
+            logger.warning(f"Error adding Lost trend line: {e}")
         
         # Update layout
         fig.update_layout(
