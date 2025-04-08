@@ -1,6 +1,15 @@
 """
-CPI Prediction component for the CPI Analysis & Prediction Dashboard.
-Provides an interactive tool for predicting optimal CPI.
+CPI Prediction Component for Market Research Bid Pricing
+
+This module provides an advanced machine learning-powered prediction tool 
+that helps market researchers optimize their bid pricing strategy by 
+analyzing key project parameters and historical data.
+
+Key Features:
+- Machine Learning Price Prediction
+- Interactive Parameter Adjustment
+- Win Probability Estimation
+- Detailed Pricing Strategy Recommendations
 """
 
 import streamlit as st
@@ -9,7 +18,7 @@ import numpy as np
 import logging
 from typing import Dict, List, Tuple, Any, Optional
 
-# Import ML model utilities
+# Core Prediction Utilities
 from models.trainer import build_models
 from models.predictor import (
     predict_cpi, 
@@ -18,339 +27,330 @@ from models.predictor import (
     simulate_win_probability
 )
 
-# Import visualization utilities
+# Visualization and UI Components
+from ui_components import (
+    render_card, 
+    metrics_row, 
+    grid_layout
+)
+
+# Configuration and Styling
+from config import COLOR_SYSTEM, TYPOGRAPHY
+
+# Data Processing
+from utils.data_processor import prepare_model_data
+
+# Visualization Utilities
 from utils.visualization import (
     create_feature_importance_chart,
     create_prediction_comparison_chart
 )
 
-# Import data processing utilities
-from utils.data_processor import prepare_model_data
-
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+# Configure logging for tracking and debugging
+logging.basicConfig(
+    level=logging.INFO, 
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
-def show_prediction(combined_data_engineered: pd.DataFrame, won_data: pd.DataFrame, lost_data: pd.DataFrame) -> None:
+def show_prediction(
+    combined_data_engineered: pd.DataFrame, 
+    won_data: pd.DataFrame, 
+    lost_data: pd.DataFrame
+) -> None:
     """
-    Display the CPI prediction tool for estimating optimal pricing.
+    Advanced CPI Prediction Tool: A comprehensive pricing strategy generator
+    
+    This function creates an interactive Streamlit interface that allows users to:
+    1. Explore predictive models' performance
+    2. Input project parameters
+    3. Generate CPI predictions
+    4. Receive detailed pricing recommendations
     
     Args:
-        combined_data_engineered (pd.DataFrame): Engineered DataFrame with features for modeling
-        won_data (pd.DataFrame): DataFrame of Won bids
-        lost_data (pd.DataFrame): DataFrame of Lost bids
+        combined_data_engineered (pd.DataFrame): Preprocessed historical bid data
+        won_data (pd.DataFrame): Historical won bid data
+        lost_data (pd.DataFrame): Historical lost bid data
     """
     try:
-        st.title("CPI Prediction Model")
-        
-        # Introduction
-        st.markdown("""
-        This tool uses machine learning to predict the optimal CPI (Cost Per Interview) based on:
-        - **IR (Incidence Rate)**: The percentage of people who qualify for a survey
-        - **LOI (Length of Interview)**: How long the survey takes in minutes
-        - **Sample Size**: The number of completed interviews
-        
-        Enter your project parameters below to get CPI predictions and pricing recommendations.
-        """)
-        
-        # Build models
-        with st.spinner("Training prediction models (this may take a moment)..."):
-            # Check if we have enough data
-            if len(combined_data_engineered) < 10:
-                st.warning("Not enough data to build reliable prediction models. Please ensure you have sufficient data.")
-                return
+        # Page Introduction with Educational Context
+        st.markdown(f"""
+        <div style="
+            background-color: {COLOR_SYSTEM['BACKGROUND']['CARD']};
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+            border-left: 4px solid {COLOR_SYSTEM['ACCENT']['BLUE']};
+            font-family: {TYPOGRAPHY['FONT_FAMILY']};
+        ">
+            <h1 style="
+                color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
+                margin-bottom: 1rem;
+                font-size: 2rem;
+                font-weight: 700;
+            ">CPI Price Prediction Tool</h1>
             
-            # Prepare model data
-            X, y = prepare_model_data(combined_data_engineered)
-            
-            # Check if preparation was successful
-            if len(X) == 0 or len(y) == 0:
-                st.warning("Failed to prepare model data. Please check your dataset for missing values or data format issues.")
-                return
-            
-            # Build models
-            do_tuning = st.sidebar.checkbox("Use advanced model tuning (slower)", value=False)
-            trained_models, model_scores, feature_importance = build_models(X, y, do_tuning)
-        
-        # Toggle for advanced options
-        show_advanced = st.sidebar.checkbox("Show advanced model details", value=False)
-        
-        if show_advanced:
-            # Display model metrics in sidebar
-            st.sidebar.title("Model Performance")
-            for model_name, metrics in model_scores.items():
-                st.sidebar.subheader(model_name)
-                for metric_name, value in metrics.items():
-                    st.sidebar.text(f"{metric_name}: {value:.4f}")
-            
-            # Show feature importance
-            st.header("Feature Importance Analysis")
-            
-            if len(feature_importance) > 0:
-                # Create feature importance chart
-                fig = create_feature_importance_chart(feature_importance)
-                st.plotly_chart(fig, use_container_width=True, key='prediction_feature_importance')
+            <p style="
+                color: {COLOR_SYSTEM['NEUTRAL']['DARKER']};
+                font-size: 1rem;
+                line-height: 1.6;
+            ">
+                💡 Machine Learning Meets Market Research Pricing
                 
-                # Add interpretation
-                with st.expander("📊 Interpretation"):
-                    st.markdown("""
-                    ### Understanding Feature Importance
-                    
-                    Feature importance shows which factors have the strongest influence on CPI in our model.
-                    Longer bars indicate more significant impact on the predicted price.
-                    
-                    ### Key Insights
-                    
-                    1. **Primary Drivers**: The top features have the strongest influence on CPI predictions.
-                       These should be your primary focus when estimating prices.
-                    
-                    2. **Relative Importance**: The values represent the relative importance of each feature
-                       compared to others. For example, a feature with 0.4 importance has twice the influence
-                       of a feature with 0.2 importance.
-                    
-                    3. **Strategic Focus**: When negotiating or adjusting bids, focus on the top features
-                       as they will have the largest impact on competitive pricing.
-                    """)
-            else:
-                st.warning("Feature importance analysis is not available. This may be due to the model type or insufficient data.")
+                This predictive tool helps you optimize your bid pricing by:
+                • Analyzing historical bid data
+                • Considering multiple project parameters
+                • Providing data-driven pricing recommendations
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Data Validation and Model Preparation
+        if len(combined_data_engineered) < 10:
+            st.warning("""
+            ### Insufficient Data for Prediction
+            
+            Our machine learning models require at least 10 historical data points 
+            to generate reliable predictions. Please ensure you have:
+            
+            ✓ Comprehensive bid history
+            ✓ Diverse project parameters
+            ✓ Clean, structured data
+            
+            Recommendations:
+            - Import more historical bid records
+            - Verify data quality and completeness
+            - Consult your data collection process
+            """)
+            return
+
+        # Model Training with User Options
+        with st.spinner("🔬 Training Predictive Models..."):
+            try:
+                # Prepare data for modeling
+                X, y = prepare_model_data(combined_data_engineered)
+                
+                if len(X) == 0 or len(y) == 0:
+                    st.error("Data preparation failed. Please review your dataset.")
+                    return
+
+                # Model training configuration
+                col1, col2 = st.columns([3, 1])
+                
+                with col1:
+                    do_tuning = st.checkbox(
+                        "Enable Advanced Model Tuning", 
+                        help="More comprehensive but slower model optimization"
+                    )
+                
+                with col2:
+                    show_details = st.checkbox(
+                        "Show Model Details", 
+                        help="Display technical model performance metrics"
+                    )
+
+                # Build machine learning models
+                trained_models, model_scores, feature_importance = build_models(X, y, do_tuning)
+            
+            except Exception as e:
+                st.error(f"Model Training Error: {e}")
+                logger.error(f"Model training failed: {e}", exc_info=True)
+                return
+
+        # Advanced Model Performance Section
+        if show_details:
+            st.header("🧠 Model Performance Insights")
+            
+            def render_model_performance_card(model_name, metrics):
+                st.markdown(f"""
+                <div style="
+                    background-color: {COLOR_SYSTEM['BACKGROUND']['CARD']};
+                    border-radius: 0.5rem;
+                    padding: 1rem;
+                    margin-bottom: 1rem;
+                    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+                ">
+                    <h3 style="
+                        color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
+                        margin-bottom: 0.5rem;
+                        font-size: 1.1rem;
+                    ">{model_name} Performance</h3>
+                    <div style="color: {COLOR_SYSTEM['NEUTRAL']['DARKER']};">
+                        {"".join(f"<p><strong>{metric}:</strong> {value:.4f}</p>" for metric, value in metrics.items())}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            grid_layout(
+                len(model_scores), 
+                [lambda m=model_name: render_model_performance_card(m, metrics) 
+                 for model_name, metrics in model_scores.items()]
+            )
+
+            # Feature Importance Visualization
+            if not feature_importance.empty:
+                st.header("🔍 Feature Impact Analysis")
+                render_card(
+                    "Key Predictive Features", 
+                    st.plotly_chart(
+                        create_feature_importance_chart(feature_importance), 
+                        use_container_width=True
+                    )
+                )
+
+        # Interactive Prediction Input Section
+        st.header("🎯 Predict Your CPI")
         
-        # User input for predictions
-        st.header("Predict CPI")
+        # Dynamic range calculation for input sliders
+        ir_config = {
+            'min': max(1, int(combined_data_engineered['IR'].min())),
+            'max': min(100, int(combined_data_engineered['IR'].max())),
+            'default': int(combined_data_engineered['IR'].mean())
+        }
         
-        # Create 3 columns for inputs
+        loi_config = {
+            'min': max(1, int(combined_data_engineered['LOI'].min())),
+            'max': min(60, int(combined_data_engineered['LOI'].max() * 1.2)),
+            'default': int(combined_data_engineered['LOI'].mean())
+        }
+        
+        completes_config = {
+            'min': max(10, int(combined_data_engineered['Completes'].min())),
+            'max': min(2000, int(combined_data_engineered['Completes'].max() * 1.2)),
+            'default': int(combined_data_engineered['Completes'].mean())
+        }
+        
         col1, col2, col3 = st.columns(3)
-        
-        # Calculate min, max, and default values from data
-        ir_min = max(1, int(combined_data_engineered['IR'].min()))
-        ir_max = min(100, int(combined_data_engineered['IR'].max()))
-        ir_default = int((ir_min + ir_max) / 2)
-        
-        loi_min = max(1, int(combined_data_engineered['LOI'].min()))
-        loi_max = min(60, int(combined_data_engineered['LOI'].max() * 1.2))  # Add some buffer
-        loi_default = int((loi_min + loi_max) / 2)
-        
-        completes_min = max(10, int(combined_data_engineered['Completes'].min()))
-        completes_max = min(2000, int(combined_data_engineered['Completes'].max() * 1.2))  # Add some buffer
-        completes_default = int((completes_min + completes_max) / 2)
         
         with col1:
             ir = st.slider(
-                "Incidence Rate (%)", 
-                min_value=ir_min, 
-                max_value=ir_max, 
-                value=ir_default,
-                help="The percentage of people who qualify for your survey"
+                "🔢 Incidence Rate (%)", 
+                min_value=ir_config['min'], 
+                max_value=ir_config['max'], 
+                value=ir_config['default'],
+                help="Percentage of people who qualify for your survey"
             )
         
         with col2:
             loi = st.slider(
-                "Length of Interview (min)", 
-                min_value=loi_min, 
-                max_value=loi_max, 
-                value=loi_default,
-                help="How long the survey takes to complete in minutes"
+                "⏱ Length of Interview (min)", 
+                min_value=loi_config['min'], 
+                max_value=loi_config['max'], 
+                value=loi_config['default'],
+                help="Total duration of the survey"
             )
         
         with col3:
             completes = st.slider(
-                "Sample Size (Completes)", 
-                min_value=completes_min, 
-                max_value=completes_max, 
-                value=completes_default,
-                help="The number of completed surveys required"
+                "📊 Sample Size", 
+                min_value=completes_config['min'], 
+                max_value=completes_config['max'], 
+                value=completes_config['default'],
+                help="Number of completed survey responses"
             )
         
-        # Create user input dictionary
-        user_input = {
-            'IR': ir,
-            'LOI': loi,
-            'Completes': completes
-        }
+        # Prediction Trigger
+        predict_button = st.button(
+            "🚀 Generate CPI Prediction", 
+            type="primary", 
+            help="Calculate recommended Cost Per Interview based on project parameters"
+        )
         
-        # Prediction section
-        if st.button("Predict CPI", type="primary"):
-            with st.spinner("Generating predictions..."):
-                # Make predictions
+        # Prediction Results
+        if predict_button:
+            with st.spinner("🔮 Generating Intelligent Predictions..."):
+                user_input = {
+                    'IR': ir,
+                    'LOI': loi,
+                    'Completes': completes
+                }
+                
+                # Core Prediction Logic
                 predictions = predict_cpi(trained_models, user_input, X.columns)
                 
                 if not predictions:
-                    st.error("Failed to generate predictions. Please try different input parameters.")
+                    st.error("Prediction generation failed. Please adjust input parameters.")
                     return
                 
                 # Calculate average prediction
                 avg_prediction = sum(predictions.values()) / len(predictions)
                 
-                # Compare to average CPIs
-                won_avg = combined_data_engineered[combined_data_engineered['Type'] == 'Won']['CPI'].mean()
-                lost_avg = combined_data_engineered[combined_data_engineered['Type'] == 'Lost']['CPI'].mean()
+                # Historical Comparisons
+                won_avg = combined_data_engineered[
+                    combined_data_engineered['Type'] == 'Won'
+                ]['CPI'].mean()
                 
-                # Display predictions
-                st.subheader("CPI Predictions")
+                lost_avg = combined_data_engineered[
+                    combined_data_engineered['Type'] == 'Lost'
+                ]['CPI'].mean()
                 
-                # Create prediction comparison chart
-                fig = create_prediction_comparison_chart(predictions, won_avg, lost_avg)
-                st.plotly_chart(fig, use_container_width=True, key='prediction_comparison_chart')
-                
-                # Display individual predictions
-                cols = st.columns(len(predictions) + 1)
-                
-                # Display model predictions
-                for i, (model_name, pred) in enumerate(predictions.items()):
-                    with cols[i]:
-                        st.metric(model_name, f"${pred:.2f}")
-                
-                # Display average prediction
-                with cols[-1]:
-                    st.metric(
-                        "Average Prediction", 
-                        f"${avg_prediction:.2f}",
-                        delta=f"{((avg_prediction - won_avg) / won_avg * 100):.1f}% vs Won Avg"
+                # Prediction Visualization
+                render_card(
+                    "Prediction Comparison", 
+                    st.plotly_chart(
+                        create_prediction_comparison_chart(predictions, won_avg, lost_avg), 
+                        use_container_width=True
                     )
-                
-                # Display comparison and recommendation
-                st.subheader("Pricing Recommendation")
-                
-                # Create comparison table
-                comparison_data = {
-                    "Metric": ["Won Bids Average", "Lost Bids Average", "Predicted CPI"],
-                    "CPI": [f"${won_avg:.2f}", f"${lost_avg:.2f}", f"${avg_prediction:.2f}"],
-                    "Difference vs Won Avg": ["0.0%", f"{((lost_avg - won_avg) / won_avg * 100):.1f}%", f"{((avg_prediction - won_avg) / won_avg * 100):.1f}%"]
-                }
-                comparison_df = pd.DataFrame(comparison_data)
-                
-                # Use a different style for the predicted row
-                st.dataframe(
-                    comparison_df,
-                    column_config={
-                        "Metric": st.column_config.TextColumn("Metric"),
-                        "CPI": st.column_config.TextColumn("CPI"),
-                        "Difference vs Won Avg": st.column_config.TextColumn("Difference vs Won Avg")
-                    },
-                    hide_index=True
                 )
                 
-                # Display recommendation
-                recommendation = get_recommendation(avg_prediction, won_avg, lost_avg)
-                st.markdown(f"""
-                **Recommendation:**
-                {recommendation}
-                """)
+                # Individual and Average Predictions
+                prediction_metrics = [
+                    *[{
+                        "label": f"{model} Prediction",
+                        "value": f"${pred:.2f}"
+                    } for model, pred in predictions.items()],
+                    {
+                        "label": "Average Prediction",
+                        "value": f"${avg_prediction:.2f}",
+                        "delta": f"{((avg_prediction - won_avg) / won_avg * 100):.1f}%"
+                    }
+                ]
                 
-                # Win probability simulation
-                win_prob = simulate_win_probability(avg_prediction, user_input, won_data, lost_data)
+                metrics_row(prediction_metrics)
+                
+                # Strategic Recommendation
+                st.header("💡 Pricing Strategy Recommendation")
+                
+                recommendation = get_recommendation(avg_prediction, won_avg, lost_avg)
+                render_card(
+                    "Strategic Insight", 
+                    f"""
+                    <div style="
+                        font-family: {TYPOGRAPHY['FONT_FAMILY']};
+                        color: {COLOR_SYSTEM['NEUTRAL']['DARKER']};
+                    ">
+                        <p><strong>Recommended Approach:</strong> {recommendation}</p>
+                    </div>
+                    """
+                )
+                
+                # Win Probability Estimation
+                win_prob = simulate_win_probability(
+                    avg_prediction, 
+                    user_input, 
+                    won_data, 
+                    lost_data
+                )
                 
                 if win_prob:
                     st.metric(
-                        "Estimated Win Probability", 
+                        "🏆 Estimated Win Probability", 
                         f"{win_prob['win_probability']:.1f}%",
-                        help="Based on historical win rates at similar price points"
+                        help="Probability of winning based on historical bid patterns"
                     )
                 
-                # Detailed pricing strategy
-                st.subheader("Detailed Pricing Strategy")
-                strategy = get_detailed_pricing_strategy(avg_prediction, user_input, won_data, lost_data)
-                st.markdown(strategy)
+                # Detailed Strategic Guidance
+                detailed_strategy = get_detailed_pricing_strategy(
+                    avg_prediction, 
+                    user_input, 
+                    won_data, 
+                    lost_data
+                )
                 
-                # Similar projects analysis
-                st.subheader("Similar Projects Analysis")
-                
-                # Filter for similar projects
-                ir_range = 15  # IR range to consider similar
-                loi_range = 5   # LOI range to consider similar
-                
-                similar_won = won_data[
-                    (won_data['IR'] >= ir - ir_range) & (won_data['IR'] <= ir + ir_range) &
-                    (won_data['LOI'] >= loi - loi_range) & (won_data['LOI'] <= loi + loi_range)
-                ]
-                
-                similar_lost = lost_data[
-                    (lost_data['IR'] >= ir - ir_range) & (lost_data['IR'] <= ir + ir_range) &
-                    (lost_data['LOI'] >= loi - loi_range) & (lost_data['LOI'] <= loi + loi_range)
-                ]
-                
-                # Create tabs for similar won and lost projects
-                sim_tabs = st.tabs(["Similar Won Projects", "Similar Lost Projects"])
-                
-                with sim_tabs[0]:
-                    if len(similar_won) > 0:
-                        st.write(f"Found {len(similar_won)} similar won projects with IR from {ir - ir_range} to {ir + ir_range} and LOI from {loi - loi_range} to {loi + loi_range}.")
-                        
-                        # Show summary stats
-                        st.markdown(f"""
-                        **Summary Statistics**:
-                        - Average CPI: ${similar_won['CPI'].mean():.2f}
-                        - Median CPI: ${similar_won['CPI'].median():.2f}
-                        - Min CPI: ${similar_won['CPI'].min():.2f}
-                        - Max CPI: ${similar_won['CPI'].max():.2f}
-                        - Standard Deviation: ${similar_won['CPI'].std():.2f}
-                        """)
-                        
-                        # Show similar projects table with selected columns
-                        display_cols = ['CPI', 'IR', 'LOI', 'Completes', 'Revenue']
-                        if 'Client' in similar_won.columns:
-                            display_cols = ['Client'] + display_cols
-                        if 'Date' in similar_won.columns:
-                            display_cols.append('Date')
-                        
-                        st.dataframe(
-                            similar_won[display_cols].sort_values('CPI'),
-                            column_config={
-                                "CPI": st.column_config.NumberColumn("CPI ($)", format="$%.2f"),
-                                "IR": st.column_config.NumberColumn("IR (%)", format="%.1f"),
-                                "LOI": st.column_config.NumberColumn("LOI (min)", format="%.1f"),
-                                "Completes": st.column_config.NumberColumn("Completes", format="%d"),
-                                "Revenue": st.column_config.NumberColumn("Revenue ($)", format="$%.2f"),
-                            }
-                        )
-                    else:
-                        st.write("No similar won projects found.")
-                
-                with sim_tabs[1]:
-                    if len(similar_lost) > 0:
-                        st.write(f"Found {len(similar_lost)} similar lost projects with IR from {ir - ir_range} to {ir + ir_range} and LOI from {loi - loi_range} to {loi + loi_range}.")
-                        
-                        # Show summary stats
-                        st.markdown(f"""
-                        **Summary Statistics**:
-                        - Average CPI: ${similar_lost['CPI'].mean():.2f}
-                        - Median CPI: ${similar_lost['CPI'].median():.2f}
-                        - Min CPI: ${similar_lost['CPI'].min():.2f}
-                        - Max CPI: ${similar_lost['CPI'].max():.2f}
-                        - Standard Deviation: ${similar_lost['CPI'].std():.2f}
-                        """)
-                        
-                        # Show similar projects table with selected columns
-                        display_cols = ['CPI', 'IR', 'LOI', 'Completes', 'Revenue']
-                        if 'Client' in similar_lost.columns:
-                            display_cols = ['Client'] + display_cols
-                        if 'Date' in similar_lost.columns:
-                            display_cols.append('Date')
-                        
-                        st.dataframe(
-                            similar_lost[display_cols].sort_values('CPI'),
-                            column_config={
-                                "CPI": st.column_config.NumberColumn("CPI ($)", format="$%.2f"),
-                                "IR": st.column_config.NumberColumn("IR (%)", format="%.1f"),
-                                "LOI": st.column_config.NumberColumn("LOI (min)", format="%.1f"),
-                                "Completes": st.column_config.NumberColumn("Completes", format="%d"),
-                                "Revenue": st.column_config.NumberColumn("Revenue ($)", format="$%.2f"),
-                            }
-                        )
-                    else:
-                        st.write("No similar lost projects found.")
+                with st.expander("📋 Comprehensive Pricing Strategy", expanded=False):
+                    st.markdown(detailed_strategy)
         
-        # Add info section at the bottom
-        st.markdown("---")
-        st.info("""
-        **How to use this tool**: 
-        
-        1. Adjust the sliders to set your project parameters (IR, LOI, Sample Size)
-        2. Click "Predict CPI" to generate predictions and recommendations
-        3. Review the predicted CPI values from different models
-        4. Use the detailed pricing strategy to guide your bid decision
-        5. Explore similar projects for additional context
-        """)
-    
     except Exception as e:
-        logger.error(f"Error in prediction component: {e}", exc_info=True)
-        st.error(f"An error occurred while rendering the prediction component: {str(e)}")
+        logger.error(f"Unexpected error in prediction component: {e}", exc_info=True)
+        st.error(f"An unexpected error occurred: {str(e)}")
