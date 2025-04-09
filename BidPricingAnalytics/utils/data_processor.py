@@ -24,6 +24,38 @@ logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+
+# Normalize column names across different datasets
+COLUMN_ALIASES = {
+    'Customer Rate': 'CPI',
+    'Interview Length': 'LOI',
+    'Length of Interview': 'LOI',
+    'Sample Size': 'Completes',
+    'Total Completes': 'Completes',
+    'Incidence Rate': 'IR',
+    'Actual IR': 'IR'
+}
+
+def standardize_column_names(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Standardize column names using common aliases to expected names.
+
+    Args:
+        df (pd.DataFrame): Input dataframe.
+
+    Returns:
+        pd.DataFrame: DataFrame with standardized column names.
+    """
+    df = df.copy()
+    rename_dict = {}
+    for col in df.columns:
+        if col in COLUMN_ALIASES:
+            rename_dict[col] = COLUMN_ALIASES[col]
+    if rename_dict:
+        logger.info(f"Standardizing columns: {rename_dict}")
+        df.rename(columns=rename_dict, inplace=True)
+    return df
+
 def create_ir_bins(df: pd.DataFrame) -> pd.DataFrame:
     """
     Create IR (Incidence Rate) bins for analysis.

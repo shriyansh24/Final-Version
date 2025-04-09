@@ -25,6 +25,28 @@ from config import (
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+COLUMN_MAPPING = {
+    'Incidence Rate': 'IR',
+    'IR%': 'IR',
+    'Length of Interview': 'LOI',
+    'Interview Length': 'LOI',
+    'Number of Completes': 'Completes',
+    'Customer Rate': 'CPI',
+    'Cost Per Interview': 'CPI',
+}
+
+def standardize_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Rename columns in a DataFrame based on known mappings to standard names.
+
+    Args:
+        df (pd.DataFrame): Input DataFrame.
+
+    Returns:
+        pd.DataFrame: Standardized DataFrame.
+    """
+    return df.rename(columns={k: v for k, v in COLUMN_MAPPING.items() if k in df.columns})
+
 def validate_data_files() -> bool:
     """
     Validate that all required data files exist.
@@ -220,6 +242,41 @@ def load_data() -> Dict[str, pd.DataFrame]:
             
         # Load lost deals
         lost_df = pd.read_excel(LOST_DEALS_FILE)
+        # Inject CPI if not present (from Customer Rate)
+        if 'CPI' not in lost_df.columns and 'Customer Rate' in lost_df.columns:
+            lost_df['CPI'] = lost_df['Customer Rate']
+            logger.warning("'CPI' column missing in lost_df. Using 'Customer Rate' as CPI (per Data Dictionary).")
+
+        # CPI from Customer Rate
+        if 'CPI' not in lost_df.columns and 'Customer Rate' in lost_df.columns:
+            lost_df['CPI'] = lost_df['Customer Rate']
+            logger.warning("'CPI' column missing in lost_df. Using 'Customer Rate' as CPI (per Data Dictionary).")
+
+        # IR from alternative naming
+        if 'IR' not in lost_df.columns:
+            possible_ir_cols = [col for col in lost_df.columns if col.strip().lower() == 'ir']
+            if possible_ir_cols:
+                lost_df['IR'] = lost_df[possible_ir_cols[0]]
+                logger.warning(f"'IR' column inferred from '{possible_ir_cols[0]}'")
+            else:
+                lost_df['IR'] = np.nan
+                logger.warning("'IR' column not found in lost_df. Filling with NaN.")
+
+        # LOI
+        if 'LOI' not in lost_df.columns:
+            possible_loi_cols = [col for col in lost_df.columns if col.strip().lower() == 'loi']
+            if possible_loi_cols:
+                lost_df['LOI'] = lost_df[possible_loi_cols[0]]
+                logger.warning(f"'LOI' column inferred from '{possible_loi_cols[0]}'")
+            else:
+                lost_df['LOI'] = np.nan
+                logger.warning("'LOI' column not found in lost_df. Filling with NaN.")
+
+        # Completes (does not exist in lost file — fill placeholder)
+        if 'Completes' not in lost_df.columns:
+            lost_df['Completes'] = np.nan
+            logger.warning("'Completes' column not found in lost_df. Filling with NaN.")
+            
         
         # Initial data validation for lost_df
         if lost_df.empty:
