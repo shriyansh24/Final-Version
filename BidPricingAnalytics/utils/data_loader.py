@@ -25,16 +25,23 @@ from config import (
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# Update the COLUMN_MAPPING dictionary to include all necessary mappings
 COLUMN_MAPPING = {
     'Incidence Rate': 'IR',
     'IR%': 'IR',
+    'Actual Ir': 'IR',  # Add this mapping
+    'Actual IR': 'IR',
     'Length of Interview': 'LOI',
     'Interview Length': 'LOI',
+    'Actual Loi': 'LOI',  # Add this mapping
     'Number of Completes': 'Completes',
+    'Complete': 'Completes',  # Add this mapping
+    'Qty': 'Completes',  # Add this mapping
     'Customer Rate': 'CPI',
     'Cost Per Interview': 'CPI',
 }
 
+# Fix the standardize_columns function to be more explicit
 def standardize_columns(df: pd.DataFrame) -> pd.DataFrame:
     """
     Rename columns in a DataFrame based on known mappings to standard names.
@@ -45,7 +52,21 @@ def standardize_columns(df: pd.DataFrame) -> pd.DataFrame:
     Returns:
         pd.DataFrame: Standardized DataFrame.
     """
-    return df.rename(columns={k: v for k, v in COLUMN_MAPPING.items() if k in df.columns})
+    df = df.copy()
+    
+    # Log original columns for debugging
+    logger.info(f"Original columns: {df.columns.tolist()}")
+    
+    # Apply mappings for columns that exist
+    rename_dict = {k: v for k, v in COLUMN_MAPPING.items() if k in df.columns}
+    if rename_dict:
+        logger.info(f"Renaming columns: {rename_dict}")
+        df = df.rename(columns=rename_dict)
+    
+    # Log final columns after standardization
+    logger.info(f"Standardized columns: {df.columns.tolist()}")
+    
+    return df
 
 def validate_data_files() -> bool:
     """

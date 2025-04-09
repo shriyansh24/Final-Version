@@ -299,20 +299,22 @@ def metrics_row(metrics_data):
     Display a row of metrics with enhanced styling.
     
     Args:
-        metrics_data: List of dicts with keys 'label', 'value', 'delta', 'delta_color'
+        metrics_data: List of dicts with keys 'title' or 'label', 'value', optional 'delta'
     """
     cols = st.columns(len(metrics_data))
     
     for i, metric in enumerate(metrics_data):
         with cols[i]:
-            delta_color = "normal"
-            if "delta_color" in metric:
-                delta_color = metric["delta_color"]
+            # Handle different metric dictionary structures
+            label = metric.get("label", metric.get("title", "Metric"))
+            value = metric.get("value", "N/A")
+            delta = metric.get("delta", None)
+            delta_color = metric.get("delta_color", "normal")
                 
             st.metric(
-                label=metric["label"],
-                value=metric["value"],
-                delta=metric.get("delta", None),
+                label=label,
+                value=value,
+                delta=delta,
                 delta_color=delta_color
             )
 

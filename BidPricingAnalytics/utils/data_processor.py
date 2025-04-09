@@ -25,7 +25,7 @@ logging.basicConfig(level=logging.INFO,
 logger = logging.getLogger(__name__)
 
 
-# Normalize column names across different datasets
+# Update the COLUMN_ALIASES dictionary to match data_loader's COLUMN_MAPPING
 COLUMN_ALIASES = {
     'Customer Rate': 'CPI',
     'Interview Length': 'LOI',
@@ -33,29 +33,15 @@ COLUMN_ALIASES = {
     'Sample Size': 'Completes',
     'Total Completes': 'Completes',
     'Incidence Rate': 'IR',
-    'Actual IR': 'IR'
+    'IR%': 'IR',
+    'Actual IR': 'IR',
+    'Actual Ir': 'IR',  # Add this mapping
+    'Actual Loi': 'LOI',  # Add this mapping
+    'Complete': 'Completes',  # Add this mapping
+    'Qty': 'Completes'  # Add this mapping
 }
 
-def standardize_column_names(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Standardize column names using common aliases to expected names.
-
-    Args:
-        df (pd.DataFrame): Input dataframe.
-
-    Returns:
-        pd.DataFrame: DataFrame with standardized column names.
-    """
-    df = df.copy()
-    rename_dict = {}
-    for col in df.columns:
-        if col in COLUMN_ALIASES:
-            rename_dict[col] = COLUMN_ALIASES[col]
-    if rename_dict:
-        logger.info(f"Standardizing columns: {rename_dict}")
-        df.rename(columns=rename_dict, inplace=True)
-    return df
-
+# Fix the binning functions to better handle missing columns
 def create_ir_bins(df: pd.DataFrame) -> pd.DataFrame:
     """
     Create IR (Incidence Rate) bins for analysis.
@@ -69,6 +55,16 @@ def create_ir_bins(df: pd.DataFrame) -> pd.DataFrame:
     try:
         df = df.copy()
         
+        # Check if IR column exists
+        if 'IR' not in df.columns:
+            logger.warning("IR column not found in dataframe. Attempting to standardize column names first.")
+            # Use standardize_column_names from this module, not an external function
+            df = df.rename(columns={k: v for k, v in COLUMN_ALIASES.items() if k in df.columns})
+            
+        if 'IR' not in df.columns:
+            logger.error("IR column not found in dataframe even after standardization.")
+            return df
+        
         # Handle missing values before binning
         df['IR'] = pd.to_numeric(df['IR'], errors='coerce')
         
@@ -81,6 +77,7 @@ def create_ir_bins(df: pd.DataFrame) -> pd.DataFrame:
         logger.error(f"Error in create_ir_bins: {e}", exc_info=True)
         return df
 
+# Apply the same pattern to the other binning functions
 def create_loi_bins(df: pd.DataFrame) -> pd.DataFrame:
     """
     Create LOI (Length of Interview) bins for analysis.
@@ -93,6 +90,15 @@ def create_loi_bins(df: pd.DataFrame) -> pd.DataFrame:
     """
     try:
         df = df.copy()
+        
+        # Check if LOI column exists
+        if 'LOI' not in df.columns:
+            logger.warning("LOI column not found in dataframe. Attempting to standardize column names first.")
+            df = standardize_column_names(df)
+            
+        if 'LOI' not in df.columns:
+            logger.error("LOI column not found in dataframe even after standardization.")
+            return df
         
         # Handle missing values before binning
         df['LOI'] = pd.to_numeric(df['LOI'], errors='coerce')
@@ -118,6 +124,15 @@ def create_completes_bins(df: pd.DataFrame) -> pd.DataFrame:
     """
     try:
         df = df.copy()
+        
+        # Check if Completes column exists
+        if 'Completes' not in df.columns:
+            logger.warning("Completes column not found in dataframe. Attempting to standardize column names first.")
+            df = standardize_column_names(df)
+            
+        if 'Completes' not in df.columns:
+            logger.error("Completes column not found in dataframe even after standardization.")
+            return df
         
         # Handle missing values before binning
         df['Completes'] = pd.to_numeric(df['Completes'], errors='coerce')
