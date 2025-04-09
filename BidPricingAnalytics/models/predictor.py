@@ -1,69 +1,96 @@
 """
 ML model prediction functionality for the CPI Analysis & Prediction Dashboard.
-Includes functions for making predictions and generating recommendations.
+
+Includes functions for making predictions and generating pricing recommendations
+with enhanced styling for the high-contrast dashboard theme.
 """
 
 import pandas as pd
 import numpy as np
 import logging
-from typing import Dict, List, Tuple, Any, Optional, Union
+from typing import Dict, List, Any, Optional, Tuple
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# Import color system for styled outputs
+try:
+    from ui_components import COLOR_SYSTEM
+except ImportError:
+    logger.warning("Could not import COLOR_SYSTEM from ui_components. Using fallback colors.")
+    # Fallback color system for console outputs
+    COLOR_SYSTEM = {
+        "ACCENT": {
+            "BLUE": "#00BFFF",
+            "ORANGE": "#FFB74D",
+            "GREEN": "#66FF99",
+            "RED": "#FF3333",
+            "PURPLE": "#BB86FC"
+        }
+    }
+
 def predict_cpi(models: Dict[str, Any], user_input: Dict[str, float], feature_names: List[str]) -> Dict[str, float]:
     """
-    Predict CPI based on user input.
-    
+    Predict CPI based on user input using a dictionary of trained models.
+
     Args:
-        models (Dict[str, Any]): Dictionary of trained models
-        user_input (Dict[str, float]): Dictionary of user input values
-        feature_names (List[str]): List of feature names expected by the models
-    
+        models (Dict[str, Any]): Dictionary of trained models.
+        user_input (Dict[str, float]): Dictionary with keys matching expected feature names.
+        feature_names (List[str]): List of feature names expected by the models.
+
     Returns:
-        Dict[str, float]: Dictionary of model predictions
+        Dict[str, float]: Dictionary of model predictions keyed by model name.
     """
     try:
-        logger.info(f"Making predictions with input: {user_input}")
+        logger.info(f"Making predictions with user input: {user_input}")
         
-        # Create a DataFrame with the user input
-        input_df = pd.DataFrame([user_input], columns=['IR', 'LOI', 'Completes'])
+        # Create a DataFrame using user_input ensuring the correct column order
+        input_df = pd.DataFrame([user_input], columns=[col for col in feature_names if col in user_input])
         
-        # Feature engineering
-        input_df['IR_LOI_Ratio'] = input_df['IR'] / input_df['LOI']
-        input_df['IR_Completes_Ratio'] = input_df['IR'] / input_df['Completes']
-        input_df['LOI_Completes_Ratio'] = input_df['LOI'] / input_df['Completes']
-        
-        # Advanced features
-        input_df['IR_LOI_Product'] = input_df['IR'] * input_df['LOI']  # Interaction term
-        input_df['CPI_per_Minute'] = 0  # Placeholder since we don't know CPI yet
-        input_df['Log_Completes'] = np.log1p(input_df['Completes'])  # Log transformation
-        
-        # Add Type columns (one-hot encoded)
-        input_df['Type_Won'] = 1  # Assuming we want to predict for 'Won' type
-        
-        # Ensure the input DataFrame has all required columns in the right order
-        final_input = pd.DataFrame(columns=feature_names)
+        # Fill missing features with default value 0 and log a warning.
         for col in feature_names:
-            if col in input_df.columns:
-                final_input[col] = input_df[col]
-            else:
-                final_input[col] = 0
-                logger.warning(f"Feature {col} not found in input data, using default value 0")
+            if col not in input_df.columns or input_df[col].isna().any():
+                input_df[col] = 0
+                logger.warning(f"Feature '{col}' missing or NaN in input. Defaulting to 0.")
         
-        # Make predictions with each model
+        # Add derived features if they are not present
+        if 'IR' in input_df and 'LOI' in input_df and 'IR_LOI_Ratio' not in input_df:
+            input_df['IR_LOI_Ratio'] = input_df['IR'] / input_df['LOI'].replace(0, 1)  # Avoid division by zero
+        
+        if 'IR' in input_df and 'Completes' in input_df and 'IR_Completes_Ratio' not in input_df:
+            input_df['IR_Completes_Ratio'] = input_df['IR'] / input_df['Completes'].replace(0, 1)
+        
+        if 'LOI' in input_df and 'Completes' in input_df and 'LOI_Completes_Ratio' not in input_df:
+            input_df['LOI_Completes_Ratio'] = input_df['LOI'] / input_df['Completes'].replace(0, 1)
+        
+        if 'IR' in input_df and 'LOI' in input_df and 'IR_LOI_Product' not in input_df:
+            input_df['IR_LOI_Product'] = input_df['IR'] * input_df['LOI']
+        
+        if 'Completes' in input_df and 'Log_Completes' not in input_df:
+            input_df['Log_Completes'] = np.log1p(input_df['Completes'])
+        
+        # Add the Type column if needed (assume we want won bid prediction by default)
+        if 'Type_Won' in feature_names and 'Type_Won' not in input_df:
+            input_df['Type_Won'] = 1
+        
+        # Ensure final DataFrame has exactly the same columns (in order) as feature_names
+        final_input = input_df.reindex(columns=feature_names, fill_value=0)
+        logger.debug(f"Final input for prediction:\n{final_input}")
+        
         predictions = {}
-        for name, model in models.items():
-            try:
-                pred = model.predict(final_input)[0]
-                predictions[name] = pred
-                logger.info(f"{name} prediction: ${pred:.2f}")
-            except Exception as e:
-                logger.error(f"Error making prediction with {name} model: {e}")
-                predictions[name] = None
         
-        # Filter out None values
+        # Run predictions for each model in the provided dictionary
+        for model_name, model in models.items():
+            try:
+                pred_value = model.predict(final_input)[0]
+                predictions[model_name] = pred_value
+                logger.info(f"{model_name} prediction: ${pred_value:.2f}")
+            except Exception as e:
+                logger.error(f"Error making prediction with {model_name} model: {e}", exc_info=True)
+                predictions[model_name] = None
+        
+        # Remove any models that returned None
         predictions = {k: v for k, v in predictions.items() if v is not None}
         
         return predictions
@@ -74,23 +101,20 @@ def predict_cpi(models: Dict[str, Any], user_input: Dict[str, float], feature_na
 
 def get_prediction_metrics(predictions: Dict[str, float]) -> Dict[str, float]:
     """
-    Calculate summary metrics for multiple model predictions.
-    
+    Calculate summary statistics for a set of model predictions.
+
     Args:
-        predictions (Dict[str, float]): Dictionary of model predictions
-    
+        predictions (Dict[str, float]): Dictionary of model predictions.
+
     Returns:
-        Dict[str, float]: Dictionary of prediction metrics
+        Dict[str, float]: Dictionary with statistical metrics (min, max, mean, median, range, std).
     """
     try:
-        # Check if predictions dictionary is empty
         if not predictions:
             return {}
         
-        # Extract prediction values
         values = list(predictions.values())
         
-        # Calculate metrics
         metrics = {
             'min': min(values),
             'max': max(values),
@@ -106,237 +130,395 @@ def get_prediction_metrics(predictions: Dict[str, float]) -> Dict[str, float]:
         logger.error(f"Error in get_prediction_metrics: {e}", exc_info=True)
         return {}
 
-def get_recommendation(predicted_cpi: float, won_avg: float, lost_avg: float) -> str:
+def get_recommendation(predicted_cpi: float, won_avg: float, lost_avg: float) -> Dict[str, str]:
     """
-    Generate a pricing recommendation based on predictions.
+    Generate a pricing recommendation based on the predicted CPI and historical averages.
     
+    Returns HTML-formatted recommendation with styling for the high-contrast dashboard.
+
     Args:
-        predicted_cpi (float): Predicted CPI value
-        won_avg (float): Average CPI for won bids
-        lost_avg (float): Average CPI for lost bids
-    
+        predicted_cpi (float): Predicted CPI.
+        won_avg (float): Average CPI for won bids.
+        lost_avg (float): Average CPI for lost bids.
+
     Returns:
-        str: Recommendation text
+        Dict[str, str]: Dictionary with 'text' (plain text) and 'html' (styled HTML) recommendations.
     """
     try:
         midpoint = (won_avg + lost_avg) / 2
         diff_percentage = ((predicted_cpi - won_avg) / won_avg) * 100
         
-        # Define recommendation based on where the prediction falls
         if predicted_cpi <= won_avg * 0.9:
             recommendation = (
-                "This CPI is significantly lower than the average for won bids. While this will "
-                "increase chances of winning, it may be unnecessarily low and could reduce profitability. "
-                f"Consider raising the price closer to the average won bid of ${won_avg:.2f}."
+                "The predicted CPI is significantly lower than the average won bid. "
+                "This may boost win rates but risks margin erosion. Consider a moderate increase "
+                f"toward the won average of ${won_avg:.2f}."
             )
+            status = "low"
+            status_color = COLOR_SYSTEM["ACCENT"]["ORANGE"]
+            
         elif predicted_cpi <= won_avg:
             recommendation = (
-                "This CPI is lower than the average for won bids, suggesting a very competitive "
-                "price point that should increase chances of winning while maintaining good profitability."
+                "The predicted CPI is slightly below the average for won bids, indicating a competitive price."
             )
+            status = "competitive"
+            status_color = COLOR_SYSTEM["ACCENT"]["GREEN"]
+            
         elif predicted_cpi <= midpoint:
             recommendation = (
-                "This CPI is higher than the average for won bids but still below the midpoint between "
-                "won and lost bids, suggesting a moderately competitive price point. It offers a good "
-                "balance between win probability and profitability."
+                "The CPI is moderately above the won average but still below the midpoint, balancing "
+                "competition and profitability."
             )
+            status = "balanced"
+            status_color = COLOR_SYSTEM["ACCENT"]["BLUE"]
+            
         elif predicted_cpi <= lost_avg:
             recommendation = (
-                "This CPI is in the upper range between won and lost bids, which may reduce chances of "
-                "winning but could improve profitability if the bid is accepted. Consider whether there "
-                "are other factors that might justify this premium pricing."
+                "The CPI is nearing the lost bid range. This could improve margins but may risk win rates. "
+                "Evaluate other strategic factors."
             )
+            status = "cautious"
+            status_color = COLOR_SYSTEM["ACCENT"]["PURPLE"]
+            
         else:
             recommendation = (
-                "This CPI is higher than the average for lost bids, suggesting a price point that may "
-                "be too high to be competitive. Unless there are unique selling points or special "
-                f"requirements, consider reducing the price to below ${lost_avg:.2f}."
+                "The predicted CPI is above the average for lost bids. This is likely too high for competitive "
+                "bidding. Consider lowering the price."
             )
+            status = "high"
+            status_color = COLOR_SYSTEM["ACCENT"]["RED"]
         
-        # Add percentage comparison
-        recommendation += f" (The predicted CPI is {diff_percentage:+.1f}% compared to the average won bid price.)"
+        # Add percentage difference to both text and HTML versions
+        diff_note = f" (Predicted CPI is {diff_percentage:+.1f}% compared to won average.)"
+        recommendation += diff_note
         
-        return recommendation
+        # Create HTML version with styling
+        html_recommendation = f"""
+        <div style="padding: 0.5rem 0;">
+            <div style="
+                display: inline-block;
+                padding: 0.25rem 0.5rem;
+                background-color: {status_color};
+                color: #000000;
+                border-radius: 0.25rem;
+                font-weight: 600;
+                font-size: 0.8rem;
+                margin-bottom: 0.5rem;
+                text-transform: uppercase;
+            ">{status}</div>
+            <div style="margin-top: 0.3rem;">{recommendation}</div>
+        </div>
+        """
+        
+        return {
+            "text": recommendation,
+            "html": html_recommendation,
+            "status": status,
+            "status_color": status_color
+        }
     
     except Exception as e:
         logger.error(f"Error in get_recommendation: {e}", exc_info=True)
-        return "Unable to generate recommendation due to an error."
+        error_msg = "Unable to generate recommendation due to an error."
+        return {
+            "text": error_msg,
+            "html": f"<div style='color: {COLOR_SYSTEM['ACCENT']['RED']};'>{error_msg}</div>",
+            "status": "error",
+            "status_color": COLOR_SYSTEM["ACCENT"]["RED"]
+        }
 
 def get_detailed_pricing_strategy(predicted_cpi: float, user_input: Dict[str, float],
-                               won_data: pd.DataFrame, lost_data: pd.DataFrame) -> str:
+                                won_data: pd.DataFrame, lost_data: pd.DataFrame) -> Dict[str, str]:
     """
-    Generate a detailed pricing strategy based on predictions and user input.
-    
+    Generate a detailed pricing strategy based on the predicted CPI and provided user inputs.
+    Returns both markdown and HTML-formatted content for the high-contrast dashboard.
+
     Args:
-        predicted_cpi (float): Predicted CPI value
-        user_input (Dict[str, float]): Dictionary of user input values
-        won_data (pd.DataFrame): DataFrame of Won bids
-        lost_data (pd.DataFrame): DataFrame of Lost bids
-    
+        predicted_cpi (float): Predicted CPI value.
+        user_input (Dict[str, float]): Dictionary of user inputs.
+        won_data (pd.DataFrame): DataFrame of won bids.
+        lost_data (pd.DataFrame): DataFrame of lost bids.
+
     Returns:
-        str: Detailed pricing strategy text
+        Dict[str, str]: Dictionary with 'markdown' and 'html' formatted strategy text.
     """
     try:
-        # Extract user input parameters
-        ir = user_input['IR']
-        loi = user_input['LOI']
-        completes = user_input['Completes']
+        ir = user_input.get('IR', 0)
+        loi = user_input.get('LOI', 0)
+        completes = user_input.get('Completes', 0)
         
-        # Filter data by similar parameters
-        ir_lower = max(0, ir - 10)
-        ir_upper = min(100, ir + 10)
-        loi_lower = max(0, loi - 5)
-        loi_upper = loi + 5
-        completes_lower = max(0, completes * 0.5)
-        completes_upper = completes * 1.5
+        # Define filter ranges for similar projects
+        ir_lower, ir_upper = max(0, ir - 10), min(100, ir + 10)
+        loi_lower, loi_upper = max(0, loi - 5), loi + 5
+        completes_lower, completes_upper = max(0, completes * 0.5), completes * 1.5
         
-        # Filter won data
         similar_won = won_data[
             (won_data['IR'] >= ir_lower) & (won_data['IR'] <= ir_upper) &
             (won_data['LOI'] >= loi_lower) & (won_data['LOI'] <= loi_upper) &
             (won_data['Completes'] >= completes_lower) & (won_data['Completes'] <= completes_upper)
         ]
         
-        # Filter lost data
         similar_lost = lost_data[
             (lost_data['IR'] >= ir_lower) & (lost_data['IR'] <= ir_upper) &
             (lost_data['LOI'] >= loi_lower) & (lost_data['LOI'] <= loi_upper) &
             (lost_data['Completes'] >= completes_lower) & (lost_data['Completes'] <= completes_upper)
         ]
         
-        # Build detailed strategy text
-        strategy = []
+        # Build strategy in Markdown format
+        md_lines = []
+        md_lines.append(f"### Detailed Pricing Strategy for IR={ir}%, LOI={loi} min, Completes={completes}")
+        md_lines.append("")
         
-        # Add heading
-        strategy.append(f"### Detailed Pricing Strategy for IR={ir}%, LOI={loi} min, Completes={completes}")
-        strategy.append("")
+        if not similar_won.empty:
+            md_lines.append(f"**Similar Won Projects (n={len(similar_won)}):**")
+            md_lines.append(f"- Average CPI: ${similar_won['CPI'].mean():.2f}")
+            md_lines.append(f"- Range: ${similar_won['CPI'].min():.2f} - ${similar_won['CPI'].max():.2f}")
+            md_lines.append("")
         
-        # Add comparison with similar projects
-        if len(similar_won) > 0:
-            strategy.append(f"**Similar Won Projects:** {len(similar_won)}")
-            strategy.append(f"- Average CPI: ${similar_won['CPI'].mean():.2f}")
-            strategy.append(f"- Min CPI: ${similar_won['CPI'].min():.2f}")
-            strategy.append(f"- Max CPI: ${similar_won['CPI'].max():.2f}")
-            strategy.append("")
+        if not similar_lost.empty:
+            md_lines.append(f"**Similar Lost Projects (n={len(similar_lost)}):**")
+            md_lines.append(f"- Average CPI: ${similar_lost['CPI'].mean():.2f}")
+            md_lines.append(f"- Range: ${similar_lost['CPI'].min():.2f} - ${similar_lost['CPI'].max():.2f}")
+            md_lines.append("")
         
-        if len(similar_lost) > 0:
-            strategy.append(f"**Similar Lost Projects:** {len(similar_lost)}")
-            strategy.append(f"- Average CPI: ${similar_lost['CPI'].mean():.2f}")
-            strategy.append(f"- Min CPI: ${similar_lost['CPI'].min():.2f}")
-            strategy.append(f"- Max CPI: ${similar_lost['CPI'].max():.2f}")
-            strategy.append("")
+        md_lines.append("**Recommended Pricing Adjustments:**")
         
-        # Add specific recommendations
-        strategy.append("**Recommended Pricing Adjustments:**")
-        
-        # IR-based adjustment
+        # Recommend adjustments based on IR
         if ir < 20:
-            strategy.append("- **Low IR Adjustment:** Add a premium of 15-20% to the base CPI to account for the difficulty of finding qualified respondents.")
+            md_lines.append("- **Low IR:** Consider a 15–20% premium due to lower respondent qualification rates.")
+            ir_adjustment = 17.5  # Midpoint of 15-20%
         elif ir < 50:
-            strategy.append("- **Medium IR Adjustment:** Add a premium of 5-10% to the base CPI.")
+            md_lines.append("- **Medium IR:** Add a 5–10% premium.")
+            ir_adjustment = 7.5   # Midpoint of 5-10%
         else:
-            strategy.append("- **High IR Adjustment:** No IR premium needed as the incidence rate is high.")
+            md_lines.append("- **High IR:** No additional premium needed.")
+            ir_adjustment = 0
         
-        # LOI-based adjustment
+        # Adjustments based on LOI
         if loi > 20:
-            strategy.append("- **Long LOI Adjustment:** Add a premium of 15-20% to compensate for the longer survey duration.")
+            md_lines.append("- **Long LOI:** Increase price by 15–20% for the extended survey duration.")
+            loi_adjustment = 17.5  # Midpoint of 15-20%
         elif loi > 10:
-            strategy.append("- **Medium LOI Adjustment:** Add a premium of 5-10% to the base CPI.")
+            md_lines.append("- **Medium LOI:** Increase by 5–10%.")
+            loi_adjustment = 7.5   # Midpoint of 5-10%
         else:
-            strategy.append("- **Short LOI Adjustment:** No LOI premium needed as the survey is short.")
+            md_lines.append("- **Short LOI:** Minimal adjustment needed.")
+            loi_adjustment = 0
         
-        # Sample size adjustment
+        # Discount based on sample size
         if completes > 1000:
-            strategy.append("- **Large Sample Discount:** Offer a 15-20% volume discount due to the very large sample size.")
+            md_lines.append("- **Large Sample:** Apply a 15–20% discount due to economies of scale.")
+            completes_adjustment = -17.5  # Negative for discount
         elif completes > 500:
-            strategy.append("- **Medium Sample Discount:** Offer a 10-15% volume discount due to the large sample size.")
+            md_lines.append("- **Medium Sample:** Apply a 10–15% discount.")
+            completes_adjustment = -12.5
         elif completes > 100:
-            strategy.append("- **Small Sample Discount:** Offer a 5-10% volume discount.")
+            md_lines.append("- **Small Sample:** Apply a 5–10% discount.")
+            completes_adjustment = -7.5
         else:
-            strategy.append("- **No Sample Discount:** The sample size is too small to qualify for a volume discount.")
+            md_lines.append("- **No Sample Discount:** Sample size is too low.")
+            completes_adjustment = 0
         
-        # Final pricing recommendation based on all factors
-        total_adjustment = 0
-
-        # IR adjustment
-        if ir < 20:
-            total_adjustment += 17.5  # Midpoint of 15-20%
-        elif ir < 50:
-            total_adjustment += 7.5   # Midpoint of 5-10%
-
-        # LOI adjustment
-        if loi > 20:
-            total_adjustment += 17.5  # Midpoint of 15-20%
-        elif loi > 10:
-            total_adjustment += 7.5   # Midpoint of 5-10%
-
-        # Sample size adjustment
-        if completes > 1000:
-            total_adjustment -= 17.5  # Midpoint of 15-20%
-        elif completes > 500:
-            total_adjustment -= 12.5  # Midpoint of 10-15%
-        elif completes > 100:
-            total_adjustment -= 7.5   # Midpoint of 5-10%
-
-        # Calculate adjusted CPI
-        base_cpi = predicted_cpi
-        adjusted_cpi = base_cpi * (1 + total_adjustment / 100)
-
-        strategy.append("")
-        strategy.append(f"**Net Adjustment:** {total_adjustment:+.1f}%")
-        strategy.append(f"**Base CPI:** ${base_cpi:.2f}")
-        strategy.append(f"**Recommended CPI:** ${adjusted_cpi:.2f}")
-
-        # Add competitive analysis
-        strategy.append("")
-        strategy.append("**Competitive Positioning:**")
-
-        if len(similar_won) > 0 and len(similar_lost) > 0:
+        total_adjustment = ir_adjustment + loi_adjustment + completes_adjustment
+        adjusted_cpi = predicted_cpi * (1 + total_adjustment / 100)
+        
+        md_lines.append("")
+        md_lines.append(f"**Net Adjustment:** {total_adjustment:+.1f}%")
+        md_lines.append(f"**Base CPI:** ${predicted_cpi:.2f}")
+        md_lines.append(f"**Recommended CPI:** ${adjusted_cpi:.2f}")
+        
+        # Compare to similar projects
+        if not similar_won.empty and not similar_lost.empty:
             won_avg = similar_won['CPI'].mean()
             lost_avg = similar_lost['CPI'].mean()
             
             if adjusted_cpi <= won_avg:
-                strategy.append(f"- This recommended CPI (${adjusted_cpi:.2f}) is below the average of similar won bids (${won_avg:.2f}), suggesting a highly competitive position.")
+                md_lines.append(f"- The recommended CPI (${adjusted_cpi:.2f}) is below the average won CPI (${won_avg:.2f}), implying a highly competitive price.")
             elif adjusted_cpi <= (won_avg + lost_avg) / 2:
-                strategy.append(f"- This recommended CPI (${adjusted_cpi:.2f}) is above the average of similar won bids (${won_avg:.2f}) but below the midpoint, suggesting a moderately competitive position.")
-            elif adjusted_cpi <= lost_avg:
-                strategy.append(f"- This recommended CPI (${adjusted_cpi:.2f}) is closer to the average of similar lost bids (${lost_avg:.2f}), which may reduce win probability. Consider additional value-add services to justify this premium.")
+                md_lines.append(f"- The recommended CPI (${adjusted_cpi:.2f}) is moderate between the averages of won (${won_avg:.2f}) and lost (${lost_avg:.2f}) bids.")
             else:
-                strategy.append(f"- This recommended CPI (${adjusted_cpi:.2f}) is above the average of similar lost bids (${lost_avg:.2f}), suggesting it may be too high to be competitive unless there are unique selling points.")
-
-        # Join the strategy text with line breaks
-        return "\n".join(strategy)
+                md_lines.append(f"- The recommended CPI (${adjusted_cpi:.2f}) is near the lost bids average (${lost_avg:.2f}), which may risk lower win rates.")
+        
+        # Create HTML version with high-contrast styling
+        html_strategy = f"""
+        <div style="
+            background-color: #1F1F1F;
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+            border-left: 4px solid {COLOR_SYSTEM['ACCENT']['PURPLE']};
+            color: #FFFFFF;
+        ">
+            <h3 style="color: #FFFFFF; margin-top: 0;">Detailed Pricing Strategy</h3>
+            <p style="color: #B0B0B0; margin-bottom: 1.5rem;">
+                IR: <span style="color: #FFFFFF; font-weight: 600;">{ir}%</span> | 
+                LOI: <span style="color: #FFFFFF; font-weight: 600;">{loi} min</span> | 
+                Completes: <span style="color: #FFFFFF; font-weight: 600;">{completes}</span>
+            </p>
+            
+            <div style="display: flex; gap: 1.5rem; flex-wrap: wrap; margin-bottom: 1.5rem;">
+        """
+        
+        # Similar projects in HTML
+        if not similar_won.empty:
+            html_strategy += f"""
+                <div style="flex: 1; min-width: 200px; background-color: #2E2E2E; padding: 1rem; border-radius: 0.3rem; border-left: 3px solid {COLOR_SYSTEM['ACCENT']['BLUE']};">
+                    <h4 style="margin-top: 0; color: #FFFFFF;">Similar Won Projects</h4>
+                    <p style="color: #B0B0B0; margin-bottom: 0.5rem;">n = {len(similar_won)}</p>
+                    <div style="font-size: 1.4rem; color: {COLOR_SYSTEM['ACCENT']['BLUE']}; font-weight: 600; margin-bottom: 0.5rem;">
+                        ${similar_won['CPI'].mean():.2f}
+                    </div>
+                    <p style="color: #B0B0B0; margin: 0;">Range: ${similar_won['CPI'].min():.2f} - ${similar_won['CPI'].max():.2f}</p>
+                </div>
+            """
+        
+        if not similar_lost.empty:
+            html_strategy += f"""
+                <div style="flex: 1; min-width: 200px; background-color: #2E2E2E; padding: 1rem; border-radius: 0.3rem; border-left: 3px solid {COLOR_SYSTEM['ACCENT']['ORANGE']};">
+                    <h4 style="margin-top: 0; color: #FFFFFF;">Similar Lost Projects</h4>
+                    <p style="color: #B0B0B0; margin-bottom: 0.5rem;">n = {len(similar_lost)}</p>
+                    <div style="font-size: 1.4rem; color: {COLOR_SYSTEM['ACCENT']['ORANGE']}; font-weight: 600; margin-bottom: 0.5rem;">
+                        ${similar_lost['CPI'].mean():.2f}
+                    </div>
+                    <p style="color: #B0B0B0; margin: 0;">Range: ${similar_lost['CPI'].min():.2f} - ${similar_lost['CPI'].max():.2f}</p>
+                </div>
+            """
+        
+        html_strategy += """
+            </div>
+            
+            <h4 style="color: #FFFFFF; margin-bottom: 1rem;">Recommended Pricing Adjustments</h4>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+        """
+        
+        # IR adjustment in HTML
+        adj_color = COLOR_SYSTEM['ACCENT']['RED'] if ir_adjustment < 0 else COLOR_SYSTEM['ACCENT']['GREEN']
+        html_strategy += f"""
+                <div style="background-color: #2E2E2E; padding: 1rem; border-radius: 0.3rem;">
+                    <h5 style="margin-top: 0; color: #FFFFFF;">IR Adjustment</h5>
+                    <div style="font-size: 1.2rem; color: {adj_color}; font-weight: 600;">
+                        {ir_adjustment:+.1f}%
+                    </div>
+                    <p style="color: #B0B0B0; margin: 0; font-size: 0.9rem;">
+                        {'Low' if ir < 20 else 'Medium' if ir < 50 else 'High'} IR: {ir}%
+                    </p>
+                </div>
+        """
+        
+        # LOI adjustment in HTML
+        adj_color = COLOR_SYSTEM['ACCENT']['RED'] if loi_adjustment < 0 else COLOR_SYSTEM['ACCENT']['GREEN']
+        html_strategy += f"""
+                <div style="background-color: #2E2E2E; padding: 1rem; border-radius: 0.3rem;">
+                    <h5 style="margin-top: 0; color: #FFFFFF;">LOI Adjustment</h5>
+                    <div style="font-size: 1.2rem; color: {adj_color}; font-weight: 600;">
+                        {loi_adjustment:+.1f}%
+                    </div>
+                    <p style="color: #B0B0B0; margin: 0; font-size: 0.9rem;">
+                        {'Long' if loi > 20 else 'Medium' if loi > 10 else 'Short'} LOI: {loi} min
+                    </p>
+                </div>
+        """
+        
+        # Completes adjustment in HTML
+        adj_color = COLOR_SYSTEM['ACCENT']['RED'] if completes_adjustment < 0 else COLOR_SYSTEM['ACCENT']['GREEN']
+        html_strategy += f"""
+                <div style="background-color: #2E2E2E; padding: 1rem; border-radius: 0.3rem;">
+                    <h5 style="margin-top: 0; color: #FFFFFF;">Sample Adjustment</h5>
+                    <div style="font-size: 1.2rem; color: {adj_color}; font-weight: 600;">
+                        {completes_adjustment:+.1f}%
+                    </div>
+                    <p style="color: #B0B0B0; margin: 0; font-size: 0.9rem;">
+                        {'Large' if completes > 1000 else 'Medium' if completes > 500 else 'Small' if completes > 100 else 'Minimal'} sample: {completes}
+                    </p>
+                </div>
+        """
+        
+        # Final pricing in HTML
+        adj_color = COLOR_SYSTEM['ACCENT']['RED'] if total_adjustment < 0 else COLOR_SYSTEM['ACCENT']['GREEN']
+        html_strategy += f"""
+            </div>
+            
+            <div style="
+                background-color: #2E2E2E;
+                padding: 1.5rem;
+                border-radius: 0.3rem;
+                margin-top: 1rem;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+            ">
+                <div>
+                    <div style="display: flex; align-items: baseline; gap: 0.5rem; margin-bottom: 0.5rem;">
+                        <h4 style="margin: 0; color: #FFFFFF;">Base CPI:</h4>
+                        <span style="font-size: 1.1rem; color: #FFFFFF;">${predicted_cpi:.2f}</span>
+                    </div>
+                    <div style="display: flex; align-items: baseline; gap: 0.5rem; margin-bottom: 0.5rem;">
+                        <h4 style="margin: 0; color: #FFFFFF;">Net Adjustment:</h4>
+                        <span style="font-size: 1.1rem; color: {adj_color};">{total_adjustment:+.1f}%</span>
+                    </div>
+                </div>
+                <div style="
+                    background-color: #1F1F1F;
+                    padding: 1rem 1.5rem;
+                    border-radius: 0.3rem;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                ">
+                    <span style="font-size: 0.9rem; color: #B0B0B0; margin-bottom: 0.3rem;">Recommended CPI</span>
+                    <span style="font-size: 1.8rem; font-weight: 700; color: {COLOR_SYSTEM['ACCENT']['BLUE']};">
+                        ${adjusted_cpi:.2f}
+                    </span>
+                </div>
+            </div>
+        </div>
+        """
+        
+        return {
+            "markdown": "\n".join(md_lines),
+            "html": html_strategy,
+            "adjusted_cpi": adjusted_cpi,
+            "base_cpi": predicted_cpi,
+            "total_adjustment": total_adjustment,
+            "adjustments": {
+                "ir": ir_adjustment,
+                "loi": loi_adjustment,
+                "completes": completes_adjustment
+            }
+        }
     
     except Exception as e:
         logger.error(f"Error in get_detailed_pricing_strategy: {e}", exc_info=True)
-        return "Unable to generate detailed pricing strategy due to an error."
+        error_md = "Unable to generate detailed pricing strategy due to an error."
+        error_html = f"<div style='color: {COLOR_SYSTEM['ACCENT']['RED']};'>{error_md}</div>"
+        return {"markdown": error_md, "html": error_html}
 
 def simulate_win_probability(predicted_cpi: float, user_input: Dict[str, float],
-                          won_data: pd.DataFrame, lost_data: pd.DataFrame) -> Dict[str, float]:
+                          won_data: pd.DataFrame, lost_data: pd.DataFrame) -> Dict[str, Any]:
     """
-    Simulate the probability of winning a bid based on the predicted CPI.
-    
+    Simulate the win probability based on the predicted CPI by comparing it within the CPI distribution.
+    Returns data suitable for high-contrast visualization.
+
     Args:
-        predicted_cpi (float): Predicted CPI value
-        user_input (Dict[str, float]): Dictionary of user input values
-        won_data (pd.DataFrame): DataFrame of Won bids
-        lost_data (pd.DataFrame): DataFrame of Lost bids
-    
+        predicted_cpi (float): Predicted CPI value.
+        user_input (Dict[str, float]): Dictionary of user inputs.
+        won_data (pd.DataFrame): DataFrame of won bids.
+        lost_data (pd.DataFrame): DataFrame of lost bids.
+
     Returns:
-        Dict[str, float]: Dictionary of win probability metrics
+        Dict[str, Any]: Dictionary containing the CPI percentile, win probability, and visualization data.
     """
     try:
-        # Combine won and lost data
+        # Combine won and lost data, assigning a "Won" flag
         combined_data = pd.concat([
             won_data.assign(Won=1),
             lost_data.assign(Won=0)
         ], ignore_index=True)
         
-        # Calculate CPI percentiles
         percentiles = [10, 20, 30, 40, 50, 60, 70, 80, 90]
-        cpi_percentiles = {p: combined_data['CPI'].quantile(p/100) for p in percentiles}
+        cpi_percentiles = {p: combined_data['CPI'].quantile(p / 100) for p in percentiles}
         
-        # Find where the predicted CPI falls in the distribution
+        # Find which percentile bracket the predicted CPI falls into
         cpi_percentile = 0
         for p in sorted(percentiles):
             if predicted_cpi <= cpi_percentiles[p]:
@@ -344,114 +526,83 @@ def simulate_win_probability(predicted_cpi: float, user_input: Dict[str, float],
                 break
         
         if cpi_percentile == 0:
-            cpi_percentile = 100  # Above all percentiles
+            cpi_percentile = 100  # If above all percentiles
         
-        # Calculate win probability based on percentile
-        # Lower percentile (lower price) = higher win probability
+        # Calculate win rates by percentile bracket
         wins_by_percentile = {}
         for p in percentiles:
-            below_p = combined_data[combined_data['CPI'] <= combined_data['CPI'].quantile(p/100)]
-            if len(below_p) > 0:
-                wins_by_percentile[p] = below_p['Won'].mean() * 100
-            else:
-                wins_by_percentile[p] = 0
+            subset = combined_data[combined_data['CPI'] <= combined_data['CPI'].quantile(p / 100)]
+            wins_by_percentile[p] = subset['Won'].mean() * 100 if len(subset) > 0 else 0
         
-        # Get win probability for the predicted CPI
-        if cpi_percentile in percentiles:
-            win_probability = wins_by_percentile[cpi_percentile]
-        else:
-            # If predicted CPI is above all percentiles, use lowest win rate
-            win_probability = min(wins_by_percentile.values())
+        # Get win probability corresponding to the predicted CPI's percentile (fallback to minimum)
+        win_probability = wins_by_percentile.get(cpi_percentile, min(wins_by_percentile.values()))
         
-        # Return results
-        return {
-            'cpi_percentile': cpi_percentile,
-            'win_probability': win_probability,
-            'percentile_data': {
-                'percentiles': percentiles,
-                'cpi_values': list(cpi_percentiles.values()),
-                'win_rates': list(wins_by_percentile.values())
+        # Create visualization-friendly data with high-contrast colors
+        viz_data = {
+            'percentiles': percentiles,
+            'cpi_values': [cpi_percentiles[p] for p in percentiles],
+            'win_rates': [wins_by_percentile[p] for p in percentiles],
+            'colors': {
+                'line': COLOR_SYSTEM["ACCENT"]["BLUE"],
+                'point': COLOR_SYSTEM["ACCENT"]["GREEN"],
+                'highlight': COLOR_SYSTEM["ACCENT"]["PURPLE"]
             }
         }
+        
+        # Enhanced output for high-contrast dashboard
+        result = {
+            'cpi_percentile': cpi_percentile,
+            'win_probability': win_probability,
+            'percentile_data': viz_data,
+            # HTML component for direct rendering
+            'html': f"""
+            <div style="
+                background-color: #1F1F1F;
+                border-radius: 0.5rem;
+                padding: 1.5rem;
+                margin-bottom: 1rem;
+                border-left: 4px solid {COLOR_SYSTEM['ACCENT']['GREEN']};
+                color: #FFFFFF;
+                text-align: center;
+            ">
+                <h3 style="margin-top: 0; margin-bottom: 1rem; color: #FFFFFF;">Win Probability Estimate</h3>
+                <div style="font-size: 2.5rem; font-weight: 700; color: {COLOR_SYSTEM['ACCENT']['GREEN']};">
+                    {win_probability:.1f}%
+                </div>
+                <p style="color: #B0B0B0; margin: 0.5rem 0;">
+                    Your bid is in the <strong>{cpi_percentile}th</strong> percentile of all bids.
+                </p>
+                <div style="
+                    background-color: #2E2E2E;
+                    height: 0.5rem;
+                    border-radius: 0.25rem;
+                    margin: 1rem 0;
+                    position: relative;
+                ">
+                    <div style="
+                        position: absolute;
+                        height: 0.5rem;
+                        width: {cpi_percentile}%;
+                        background-color: {COLOR_SYSTEM['ACCENT']['BLUE']};
+                        border-radius: 0.25rem;
+                    "></div>
+                </div>
+                <p style="color: #B0B0B0; margin: 0; font-size: 0.9rem;">
+                    CPI: ${predicted_cpi:.2f}
+                </p>
+            </div>
+            """
+        }
+        
+        return result
     
     except Exception as e:
         logger.error(f"Error in simulate_win_probability: {e}", exc_info=True)
-        return {}
-
-if __name__ == "__main__":
-    # Test prediction functions with sample data
-    try:
-        import pandas as pd
-        import numpy as np
-        
-        # Create sample models
-        class DummyModel:
-            def predict(self, X):
-                # Simple prediction based on IR and LOI
-                return np.array([X['IR'].values[0] * 0.1 + X['LOI'].values[0] * 0.3])
-        
-        models = {
-            'Linear Regression': DummyModel(),
-            'Random Forest': DummyModel(),
-            'Gradient Boosting': DummyModel()
+        return {
+            'error': str(e),
+            'html': f"""
+            <div style="color: {COLOR_SYSTEM['ACCENT']['RED']}; padding: 1rem; text-align: center;">
+                Unable to simulate win probability due to an error.
+            </div>
+            """
         }
-        
-        # Create sample user input
-        user_input = {
-            'IR': 30,
-            'LOI': 15,
-            'Completes': 500
-        }
-        
-        # Define feature names
-        feature_names = ['IR', 'LOI', 'Completes', 'IR_LOI_Ratio', 
-                         'IR_Completes_Ratio', 'Type_Won']
-        
-        # Test predict_cpi
-        print("Testing predict_cpi...")
-        predictions = predict_cpi(models, user_input, feature_names)
-        print(f"Predictions: {predictions}")
-        
-        # Test get_prediction_metrics
-        print("\nTesting get_prediction_metrics...")
-        metrics = get_prediction_metrics(predictions)
-        print(f"Metrics: {metrics}")
-        
-        # Test get_recommendation
-        print("\nTesting get_recommendation...")
-        recommendation = get_recommendation(7.5, 6.0, 9.0)
-        print(f"Recommendation: {recommendation}")
-        
-        # Create sample won and lost data
-        np.random.seed(42)
-        n_samples = 50
-        
-        won_data = pd.DataFrame({
-            'CPI': np.random.uniform(5, 8, n_samples),
-            'IR': np.random.uniform(20, 80, n_samples),
-            'LOI': np.random.uniform(5, 25, n_samples),
-            'Completes': np.random.uniform(100, 1000, n_samples)
-        })
-        
-        lost_data = pd.DataFrame({
-            'CPI': np.random.uniform(7, 10, n_samples),
-            'IR': np.random.uniform(10, 70, n_samples),
-            'LOI': np.random.uniform(10, 30, n_samples),
-            'Completes': np.random.uniform(50, 800, n_samples)
-        })
-        
-        # Test get_detailed_pricing_strategy
-        print("\nTesting get_detailed_pricing_strategy...")
-        strategy = get_detailed_pricing_strategy(7.5, user_input, won_data, lost_data)
-        print(strategy)
-        
-        # Test simulate_win_probability
-        print("\nTesting simulate_win_probability...")
-        win_prob = simulate_win_probability(7.5, user_input, won_data, lost_data)
-        print(f"Win Probability: {win_prob['win_probability']:.1f}%")
-        print(f"CPI Percentile: {win_prob['cpi_percentile']}")
-        
-        print("\nAll tests completed successfully")
-        
-    except Exception as e:
-        print(f"Error testing predictor: {e}")

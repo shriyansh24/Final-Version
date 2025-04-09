@@ -1,9 +1,6 @@
 """
 CPI Analysis & Prediction Dashboard
 Main application file that orchestrates the dashboard components.
-
-This application provides a comprehensive analysis of Cost Per Interview (CPI)
-for market research projects, including visualization, analysis, and prediction tools.
 """
 
 import streamlit as st
@@ -23,11 +20,11 @@ from ui_components import (
     COLOR_SYSTEM
 )
 
-# Import utility modules
+# Import utility modules for data handling
 from utils.data_loader import load_data
 from utils.data_processor import apply_all_bins, engineer_features, get_data_summary
 
-# Import components
+# Import dashboard components
 from components.overview import show_overview
 from components.analysis import show_analysis
 from components.prediction import show_prediction
@@ -38,24 +35,22 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 def main():
-    """Main application function to orchestrate the dashboard."""
-    # Setup UI components
+    """Main function to orchestrate the dashboard."""
+    # Setup UI (this loads our high-contrast, custom CSS and applies global styles)
     setup_ui()
     
-    # Add app title and description in sidebar
+    # Sidebar Navigation and Title
     st.sidebar.title("CPI Analysis & Prediction")
     
-    # Navigation
-    st.sidebar.title("Navigation")
     app_mode = st.sidebar.radio(
-        "Choose a mode",
+        "Navigation",
         ["Overview", "CPI Analysis", "CPI Prediction", "Insights & Recommendations"]
     )
     
-    # Render page header
+    # Render the header with current page highlighted
     render_header(current_page=app_mode)
     
-    # Load data
+    # Data Loading & Logging
     with st.spinner("Loading data..."):
         try:
             data = load_data()
@@ -65,17 +60,13 @@ def main():
             lost_df_filtered = data['lost_filtered']
             combined_df = data['combined']
             combined_df_filtered = data['combined_filtered']
-            
-            # Log data shapes
-            logger.info(f"Won deals: {won_df.shape}")
-            logger.info(f"Lost deals: {lost_df.shape}")
-            logger.info(f"Combined: {combined_df.shape}")
+            logger.info(f"Won deals: {won_df.shape}, Lost deals: {lost_df.shape}, Combined: {combined_df.shape}")
         except Exception as e:
             st.error(f"Error loading data: {str(e)}")
-            st.error("Please check that all required data files are in the correct location.")
+            st.error("Please verify that all required data files are in the correct location.")
             st.stop()
     
-    # Process data - add bins to all dataframes
+    # Apply binning to all dataframes (this is used for categorizing IR, LOI, and Completes)
     try:
         won_df = apply_all_bins(won_df)
         won_df_filtered = apply_all_bins(won_df_filtered)
@@ -87,8 +78,9 @@ def main():
         st.error(f"Error processing data: {str(e)}")
         st.stop()
     
-    # Add sidebar filters with enhanced styling
+    # Sidebar Filter Options with enhanced styling
     st.sidebar.markdown("---")
+    
     st.sidebar.markdown(f"""
     <div style="
         background-color: {COLOR_SYSTEM['BACKGROUND']['CARD']};
@@ -97,18 +89,16 @@ def main():
         margin-bottom: 1rem;
         border-left: 4px solid {COLOR_SYSTEM['ACCENT']['BLUE']};
     ">
-        <h3 style="margin-top: 0;">Filtering Options</h3>
+        <h3 style="margin-top: 0; color: {COLOR_SYSTEM['PRIMARY']['MAIN']};">Filtering Options</h3>
     </div>
     """, unsafe_allow_html=True)
     
-    # Filter for extreme values
     show_filtered = st.sidebar.checkbox(
-        "Filter out extreme values (>95th percentile)", 
+        "Filter out extreme values (>95th percentile)",
         value=True,
         help="Remove outliers with very high CPI values to focus on typical cases"
     )
     
-    # Choose datasets based on filtering option
     if show_filtered:
         won_data = won_df_filtered
         lost_data = lost_df_filtered
@@ -118,10 +108,11 @@ def main():
         lost_data = lost_df
         combined_data = combined_df
     
-    # Display metrics in sidebar with enhanced styling
+    # Display summary metrics in the sidebar with enhanced styling
     data_summary = get_data_summary(combined_data)
     
     st.sidebar.markdown("---")
+    
     st.sidebar.markdown(f"""
     <div style="
         background-color: {COLOR_SYSTEM['BACKGROUND']['CARD']};
@@ -130,42 +121,40 @@ def main():
         margin-bottom: 1rem;
         border-left: 4px solid {COLOR_SYSTEM['ACCENT']['PURPLE']};
     ">
-        <h3 style="margin-top: 0;">Data Summary</h3>
+        <h3 style="margin-top: 0; color: {COLOR_SYSTEM['PRIMARY']['MAIN']};">Data Summary</h3>
     </div>
     """, unsafe_allow_html=True)
     
-    # Create metrics data for display
+    # Create metrics for display
     metrics_data = []
     
     if 'Won' in data_summary:
         metrics_data.append({
             "label": "Won Bids Avg CPI",
-            "value": f"${data_summary['Won']['Avg_CPI']:.2f}"
+            "value": f"${data_summary['Won']['Avg_CPI']:.2f}",
+            "delta": f"{data_summary['Won']['Avg_CPI'] - data_summary['Combined']['Avg_CPI']:.2f}",
+            "delta_color": "normal"
         })
     
     if 'Lost' in data_summary:
         metrics_data.append({
             "label": "Lost Bids Avg CPI",
-            "value": f"${data_summary['Lost']['Avg_CPI']:.2f}"
+            "value": f"${data_summary['Lost']['Avg_CPI']:.2f}",
+            "delta": f"{data_summary['Lost']['Avg_CPI'] - data_summary['Combined']['Avg_CPI']:.2f}",
+            "delta_color": "inverse"
         })
     
-    if 'Won' in data_summary and 'Lost' in data_summary:
-        diff = data_summary['Lost']['Avg_CPI'] - data_summary['Won']['Avg_CPI']
-        metrics_data.append({
-            "label": "CPI Difference",
-            "value": f"${diff:.2f}",
-            "delta": f"{diff:.2f}"
-        })
+    if len(metrics_data) > 0:
+        metrics_row(metrics_data)
+    else:
+        # Fallback if metrics creation fails
+        for key in data_summary:
+            st.sidebar.metric(
+                label=f"{key} Avg CPI",
+                value=f"${data_summary[key]['Avg_CPI']:.2f}"
+            )
     
-    # Show metrics in sidebar
-    for metric in metrics_data:
-        st.sidebar.metric(
-            label=metric["label"],
-            value=metric["value"],
-            delta=metric.get("delta", None)
-        )
-    
-    # Add footer with enhanced styling
+    # Sidebar Data Summary Section with enhanced styling
     st.sidebar.markdown("---")
     st.sidebar.markdown(f"""
     <div style="
@@ -173,7 +162,7 @@ def main():
         border-radius: 0.5rem;
         padding: 1rem;
         font-size: 0.9rem;
-        color: {COLOR_SYSTEM['NEUTRAL']['DARKER']};
+        color: {COLOR_SYSTEM['PRIMARY']['LIGHT']};
     ">
         <p style="margin: 0;">
             This dashboard provides analysis and prediction tools for 

@@ -1,382 +1,360 @@
 """
 Data loading functionality for the CPI Analysis & Prediction Dashboard.
-Handles loading data from Excel files and initial preprocessing.
+Handles loading data from Excel files with enhanced data validation and initial preprocessing.
 """
 
 import os
 import pandas as pd
+import numpy as np
 import streamlit as st
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
 import logging
-from config import (INVOICED_JOBS_FILE, LOST_DEALS_FILE, ACCOUNT_SEGMENT_FILE,
-                   FEATURE_ENGINEERING_CONFIG, COLOR_SYSTEM)
+from sklearn.impute import KNNImputer, SimpleImputer
+from sklearn.experimental import enable_iterative_imputer
+from sklearn.impute import IterativeImputer
+
+from config import (
+    INVOICED_JOBS_FILE, 
+    LOST_DEALS_FILE, 
+    ACCOUNT_SEGMENT_FILE, 
+    FEATURE_ENGINEERING_CONFIG,
+    COLOR_SYSTEM
+)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-@st.cache_data(ttl=3600)  # Cache data for 1 hour
-def load_data() -> Dict[str, pd.DataFrame]:
+def validate_data_files() -> bool:
     """
-    Load and process the data from Excel files.
+    Validate that all required data files exist.
     
     Returns:
-        Dict[str, pd.DataFrame]: Dictionary containing different dataframes:
-            - 'won': Won deals dataframe
-            - 'won_filtered': Won deals with extreme values filtered out
-            - 'lost': Lost deals dataframe
-            - 'lost_filtered': Lost deals with extreme values filtered out
-            - 'combined': Combined dataframe of won and lost deals
-            - 'combined_filtered': Combined dataframe with extreme values filtered out
-    
-    Raises:
-        FileNotFoundError: If any of the required data files are missing
-        ValueError: If data processing fails due to unexpected data structure
+        bool: True if all required files exist, False otherwise.
     """
-    try:
-        progress_placeholder = None
-        progress_bar = None
+    files_to_check = [INVOICED_JOBS_FILE, LOST_DEALS_FILE]
+    
+    # Check optional files separately
+    optional_files = [ACCOUNT_SEGMENT_FILE]
+    
+    missing_files = [str(f) for f in files_to_check if not os.path.exists(f)]
+    
+    if missing_files:
+        logger.error(f"Missing required data files: {', '.join(missing_files)}")
+        return False
         
-        # Check if in Streamlit context for progress reporting
+    # Log warning for missing optional files
+    missing_optional = [str(f) for f in optional_files if not os.path.exists(f)]
+    if missing_optional:
+        logger.warning(f"Missing optional data files: {', '.join(missing_optional)}")
+    
+    return True
+
+def detect_data_anomalies(df: pd.DataFrame, dataset_name: str) -> List[str]:
+    """
+    Detect potential anomalies in the dataset.
+    
+    Args:
+        df (pd.DataFrame): Input dataframe.
+        dataset_name (str): Name of the dataset for logging.
+        
+    Returns:
+        List[str]: List of anomaly messages.
+    """
+    anomalies = []
+    
+    # Check for duplicated rows
+    duplicate_count = df.duplicated().sum()
+    if duplicate_count > 0:
+        message = f"{dataset_name}: Found {duplicate_count} duplicate rows"
+        logger.warning(message)
+        anomalies.append(message)
+    
+    # Check key numeric columns for anomalies
+    numeric_cols = ['IR', 'LOI', 'Completes', 'CPI']
+    for col in numeric_cols:
+        if col in df.columns:
+            # Check for zeros that should likely be positive
+            if col in ['LOI', 'CPI', 'Completes'] and (df[col] == 0).any():
+                zeros = (df[col] == 0).sum()
+                message = f"{dataset_name}: Column '{col}' has {zeros} zero values"
+                logger.warning(message)
+                anomalies.append(message)
+                
+            # Check for extreme outliers (beyond 5 standard deviations)
+            if df[col].dtype.kind in 'ifc':  # integer, float, or complex
+                mean, std = df[col].mean(), df[col].std()
+                if not pd.isna(std) and std > 0:
+                    outliers = df[df[col] > mean + 5*std].shape[0]
+                    if outliers > 0:
+                        message = f"{dataset_name}: Column '{col}' has {outliers} extreme high outliers"
+                        logger.info(message)
+                        anomalies.append(message)
+    
+    # Check for missing values
+    missing = df.isna().sum()
+    missing = missing[missing > 0]
+    if not missing.empty:
+        message = f"{dataset_name}: Missing values detected in columns: {', '.join(missing.index.tolist())}"
+        logger.info(message)
+        anomalies.append(message)
+    
+    return anomalies
+
+@st.cache_data(ttl=3600)
+def load_data() -> Dict[str, pd.DataFrame]:
+    """
+    Load and process data from Excel files with enhanced data validation and imputation.
+    
+    Returns:
+        Dict[str, pd.DataFrame]: Dictionary containing:
+        - 'won': Won deals dataframe.
+        - 'won_filtered': Won deals with extreme values removed.
+        - 'lost': Lost deals dataframe.
+        - 'lost_filtered': Lost deals with extreme values removed.
+        - 'combined': Combined won and lost deals.
+        - 'combined_filtered': Combined dataset with outliers removed.
+        - 'data_quality': Information about data quality issues.
+    """
+    data_quality_issues = []
+    
+    try:
+        # Check if running in Streamlit and prepare progress indicators
+        progress_placeholder = None
         in_streamlit = True
         try:
             _ = st.empty()
-        except:
+        except Exception:
             in_streamlit = False
             
         if in_streamlit:
             progress_placeholder = st.empty()
+            # Use dark-themed styling for progress message
             progress_placeholder.markdown(f"""
             <div style="
                 background-color: {COLOR_SYSTEM['BACKGROUND']['CARD']};
-                border-radius: 0.5rem;
                 padding: 1rem;
-                margin-bottom: 1rem;
+                border-radius: 0.5rem;
                 border-left: 4px solid {COLOR_SYSTEM['ACCENT']['BLUE']};
+                margin-bottom: 1rem;
+                color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
             ">
-                <h4 style="margin-top: 0;">Data Loading: Initializing...</h4>
-                <p>Checking data files...</p>
+                <h3 style="margin-top: 0; color: {COLOR_SYSTEM['PRIMARY']['MAIN']};">Checking data files...</h3>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        # Validate all required files exist
+        if not validate_data_files():
+            if in_streamlit:
+                st.error("Required data files are missing. Please check the data directory.")
+            raise FileNotFoundError("Required data files are missing. Check log for details.")
+        
+        if in_streamlit:
+            progress_placeholder.markdown(f"""
+            <div style="
+                background-color: {COLOR_SYSTEM['BACKGROUND']['CARD']};
+                padding: 1rem;
+                border-radius: 0.5rem;
+                border-left: 4px solid {COLOR_SYSTEM['ACCENT']['BLUE']};
+                margin-bottom: 1rem;
+                color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
+            ">
+                <h3 style="margin-top: 0; color: {COLOR_SYSTEM['PRIMARY']['MAIN']};">Loading invoiced jobs data...</h3>
             </div>
             """, unsafe_allow_html=True)
             
-            progress_bar = st.progress(0)
+        # Load won deals (invoiced jobs)
+        won_df = pd.read_excel(INVOICED_JOBS_FILE)
         
-        # Check if files exist
-        if not os.path.exists(INVOICED_JOBS_FILE):
-            error_message = f"Could not find the invoiced jobs file: {INVOICED_JOBS_FILE}"
-            logger.error(error_message)
-            if in_streamlit:
-                progress_placeholder.error(error_message)
-            raise FileNotFoundError(error_message)
+        # Initial data validation for won_df
+        if won_df.empty:
+            st.error("The invoiced jobs file is empty.")
+            raise ValueError("The invoiced jobs file is empty.")
             
-        if not os.path.exists(LOST_DEALS_FILE):
-            error_message = f"Could not find the lost deals file: {LOST_DEALS_FILE}"
-            logger.error(error_message)
-            if in_streamlit:
-                progress_placeholder.error(error_message)
-            raise FileNotFoundError(error_message)
+        # Detect anomalies in won data
+        won_anomalies = detect_data_anomalies(won_df, "Won deals")
+        data_quality_issues.extend(won_anomalies)
         
-        # Update progress
         if in_streamlit:
-            progress_bar.progress(10)
             progress_placeholder.markdown(f"""
             <div style="
                 background-color: {COLOR_SYSTEM['BACKGROUND']['CARD']};
-                border-radius: 0.5rem;
                 padding: 1rem;
-                margin-bottom: 1rem;
+                border-radius: 0.5rem;
                 border-left: 4px solid {COLOR_SYSTEM['ACCENT']['BLUE']};
+                margin-bottom: 1rem;
+                color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
             ">
-                <h4 style="margin-top: 0;">Data Loading: 10%</h4>
-                <p>Loading invoiced jobs data...</p>
+                <h3 style="margin-top: 0; color: {COLOR_SYSTEM['PRIMARY']['MAIN']};">Processing invoiced jobs data...</h3>
             </div>
             """, unsafe_allow_html=True)
-        
-        # Load invoiced jobs data (Won deals)
-        logger.info(f"Loading invoiced jobs data from {INVOICED_JOBS_FILE}")
-        invoiced_df = pd.read_excel(INVOICED_JOBS_FILE)
-        
-        # Log column names for debugging
-        logger.debug(f"Columns in invoiced_df: {invoiced_df.columns.tolist()}")
-        
-        # Update progress
-        if in_streamlit:
-            progress_bar.progress(25)
-            progress_placeholder.markdown(f"""
-            <div style="
-                background-color: {COLOR_SYSTEM['BACKGROUND']['CARD']};
-                border-radius: 0.5rem;
-                padding: 1rem;
-                margin-bottom: 1rem;
-                border-left: 4px solid {COLOR_SYSTEM['ACCENT']['BLUE']};
-            ">
-                <h4 style="margin-top: 0;">Data Loading: 25%</h4>
-                <p>Processing invoiced jobs data...</p>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        # Rename columns to remove spaces
-        invoiced_df = invoiced_df.rename(columns={
-            ' CPI ': 'CPI',
-            ' Actual Project Revenue ': 'Revenue',
-            'Actual Project Revenue': 'Revenue',
-            ' Revenue ': 'Revenue',
-            'Revenue ': 'Revenue'
-        })
-        
-        # Process Countries column
-        invoiced_df['Countries'] = invoiced_df['Countries'].fillna('[]')
-        invoiced_df['Country'] = invoiced_df['Countries'].apply(
-            lambda x: x.replace('[', '').replace(']', '').replace('"', '')
-        )
-        invoiced_df['Country'] = invoiced_df['Country'].replace('', 'USA')
-        
-        # Create Won dataset
-        won_df = invoiced_df[[
-            'Project Code Parent', 'Client Name', 'CPI', 'Actual Ir', 'Actual Loi', 
-            'Complete', 'Revenue', 'Invoiced Date', 'Country', 'Audience'
-        ]].copy()
-        
-        # Rename columns for consistency
-        won_df = won_df.rename(columns={
-            'Project Code Parent': 'ProjectId',
-            'Client Name': 'Client',
-            'Actual Ir': 'IR',
-            'Actual Loi': 'LOI',
-            'Complete': 'Completes',
-            'Invoiced Date': 'Date'
-        })
-        
-        # Add type column
+            
+        # Basic preprocessing for won_df
+        # Ensure 'Type' column exists and is set to 'Won'
         won_df['Type'] = 'Won'
         
-        # Update progress
+        # Convert key columns to numeric with warnings for non-numeric values
+        numeric_cols = ['IR', 'LOI', 'Completes', 'CPI', 'CPI_ORIGINAL']
+        for col in numeric_cols:
+            if col in won_df.columns:
+                non_numeric = pd.to_numeric(won_df[col], errors='coerce').isna() & ~won_df[col].isna()
+                if non_numeric.any():
+                    message = f"Won deals: Found {non_numeric.sum()} non-numeric values in '{col}', converting to NaN for imputation"
+                    logger.warning(message)
+                    data_quality_issues.append(message)
+                won_df[col] = pd.to_numeric(won_df[col], errors='coerce')
+        
         if in_streamlit:
-            progress_bar.progress(40)
             progress_placeholder.markdown(f"""
             <div style="
                 background-color: {COLOR_SYSTEM['BACKGROUND']['CARD']};
-                border-radius: 0.5rem;
                 padding: 1rem;
-                margin-bottom: 1rem;
+                border-radius: 0.5rem;
                 border-left: 4px solid {COLOR_SYSTEM['ACCENT']['BLUE']};
+                margin-bottom: 1rem;
+                color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
             ">
-                <h4 style="margin-top: 0;">Data Loading: 40%</h4>
-                <p>Loading lost deals data...</p>
+                <h3 style="margin-top: 0; color: {COLOR_SYSTEM['PRIMARY']['MAIN']};">Loading lost deals data...</h3>
             </div>
             """, unsafe_allow_html=True)
+            
+        # Load lost deals
+        lost_df = pd.read_excel(LOST_DEALS_FILE)
         
-        # Load lost deals data
-        logger.info(f"Loading lost deals data from {LOST_DEALS_FILE}")
-        lost_df_raw = pd.read_excel(LOST_DEALS_FILE)
+        # Initial data validation for lost_df
+        if lost_df.empty:
+            st.error("The lost deals file is empty.")
+            raise ValueError("The lost deals file is empty.")
+            
+        # Detect anomalies in lost data
+        lost_anomalies = detect_data_anomalies(lost_df, "Lost deals")
+        data_quality_issues.extend(lost_anomalies)
         
-        # Update progress
         if in_streamlit:
-            progress_bar.progress(55)
             progress_placeholder.markdown(f"""
             <div style="
                 background-color: {COLOR_SYSTEM['BACKGROUND']['CARD']};
-                border-radius: 0.5rem;
                 padding: 1rem;
-                margin-bottom: 1rem;
+                border-radius: 0.5rem;
                 border-left: 4px solid {COLOR_SYSTEM['ACCENT']['BLUE']};
+                margin-bottom: 1rem;
+                color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
             ">
-                <h4 style="margin-top: 0;">Data Loading: 55%</h4>
-                <p>Processing lost deals data...</p>
+                <h3 style="margin-top: 0; color: {COLOR_SYSTEM['PRIMARY']['MAIN']};">Processing lost deals data...</h3>
             </div>
             """, unsafe_allow_html=True)
-        
-        # Filter for Sample items only
-        lost_df = lost_df_raw[lost_df_raw['Item'] == 'Sample'].copy()
-        
-        # Create Lost dataset
-        lost_df = lost_df[[
-            'Record Id', 'Account Name', 'Customer Rate', 'IR', 'LOI', 
-            'Qty', 'Item Amount', 'Description (Items)', 'Deal Name'
-        ]].copy()
-        
-        # Rename columns for consistency
-        lost_df = lost_df.rename(columns={
-            'Record Id': 'DealId',
-            'Account Name': 'Client',
-            'Customer Rate': 'CPI',
-            'Qty': 'Completes',
-            'Item Amount': 'Revenue',
-            'Description (Items)': 'Country',
-            'Deal Name': 'ProjectName'
-        })
-        
-        # Add type column
+            
+        # Basic preprocessing for lost_df
+        # Ensure 'Type' column exists and is set to 'Lost'
         lost_df['Type'] = 'Lost'
         
-        # Update progress
+        # Convert key columns to numeric with warnings for non-numeric values
+        for col in numeric_cols:
+            if col in lost_df.columns:
+                non_numeric = pd.to_numeric(lost_df[col], errors='coerce').isna() & ~lost_df[col].isna()
+                if non_numeric.any():
+                    message = f"Lost deals: Found {non_numeric.sum()} non-numeric values in '{col}', converting to NaN for imputation"
+                    logger.warning(message)
+                    data_quality_issues.append(message)
+                lost_df[col] = pd.to_numeric(lost_df[col], errors='coerce')
+        
         if in_streamlit:
-            progress_bar.progress(70)
             progress_placeholder.markdown(f"""
             <div style="
                 background-color: {COLOR_SYSTEM['BACKGROUND']['CARD']};
-                border-radius: 0.5rem;
                 padding: 1rem;
-                margin-bottom: 1rem;
+                border-radius: 0.5rem;
                 border-left: 4px solid {COLOR_SYSTEM['ACCENT']['BLUE']};
+                margin-bottom: 1rem;
+                color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
             ">
-                <h4 style="margin-top: 0;">Data Loading: 70%</h4>
-                <p>Loading and processing client segment data...</p>
+                <h3 style="margin-top: 0; color: {COLOR_SYSTEM['PRIMARY']['MAIN']};">Loading and processing client segment data...</h3>
             </div>
             """, unsafe_allow_html=True)
             
-        # Try to load account segment data
+        # Load account segment data if available
         if os.path.exists(ACCOUNT_SEGMENT_FILE):
-            logger.info(f"Loading account segment data from {ACCOUNT_SEGMENT_FILE}")
             try:
-                client_segments = pd.read_csv(ACCOUNT_SEGMENT_FILE)
-                # Clean up column names
-                client_segments = client_segments.rename(columns={
-                    'Account Name': 'Client',
-                    'Client Segment Type': 'Segment'
-                })
+                account_segment_df = pd.read_csv(ACCOUNT_SEGMENT_FILE)
                 
-                # Log Segment distribution before merging
-                logger.info(f"Segment distribution before merging: {client_segments['Segment'].value_counts().to_dict()}")
-
-                # Clean up Client names for better matching
-                client_segments['Client'] = client_segments['Client'].str.strip().str.upper()
-                won_df['Client'] = won_df['Client'].str.strip().str.upper()
-                lost_df['Client'] = lost_df['Client'].str.strip().str.upper()
-
-                # Merge segments with won and lost dataframes
-                won_df = pd.merge(
-                    won_df, 
-                    client_segments[['Client', 'Segment']], 
-                    on='Client', 
-                    how='left'
-                )
-                lost_df = pd.merge(
-                    lost_df, 
-                    client_segments[['Client', 'Segment']], 
-                    on='Client', 
-                    how='left'
-                )
-                
-                # Log merge success rate
-                won_match = won_df['Segment'].notna().mean() * 100
-                lost_match = lost_df['Segment'].notna().mean() * 100
-                logger.info(f"Won deals segment match rate: {won_match:.2f}%")
-                logger.info(f"Lost deals segment match rate: {lost_match:.2f}%")
-                logger.info("Successfully merged client segment data")
+                if 'AccountID' in account_segment_df.columns and 'Segment' in account_segment_df.columns:
+                    # Add segment to won_df and lost_df if they have AccountID columns
+                    if 'AccountID' in won_df.columns:
+                        won_df = won_df.merge(account_segment_df[['AccountID', 'Segment']], 
+                                             on='AccountID', how='left')
+                    
+                    if 'AccountID' in lost_df.columns:
+                        lost_df = lost_df.merge(account_segment_df[['AccountID', 'Segment']], 
+                                               on='AccountID', how='left')
+                    
+                    logger.info("Successfully merged account segment data")
+                else:
+                    logger.warning("Account segment file doesn't have expected columns")
+                    data_quality_issues.append("Account segment file doesn't have expected columns")
             except Exception as e:
-                logger.warning(f"Failed to load or merge segment data: {e}")
+                logger.error(f"Error loading account segment data: {str(e)}")
+                data_quality_issues.append(f"Error loading account segment data: {str(e)}")
         
-        # Update progress
         if in_streamlit:
-            progress_bar.progress(85)
             progress_placeholder.markdown(f"""
             <div style="
                 background-color: {COLOR_SYSTEM['BACKGROUND']['CARD']};
-                border-radius: 0.5rem;
                 padding: 1rem;
-                margin-bottom: 1rem;
+                border-radius: 0.5rem;
                 border-left: 4px solid {COLOR_SYSTEM['ACCENT']['BLUE']};
+                margin-bottom: 1rem;
+                color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
             ">
-                <h4 style="margin-top: 0;">Data Loading: 85%</h4>
-                <p>Filtering and preprocessing data...</p>
+                <h3 style="margin-top: 0; color: {COLOR_SYSTEM['PRIMARY']['MAIN']};">Filtering and preprocessing data...</h3>
             </div>
             """, unsafe_allow_html=True)
+            
+        # Combine datasets for further processing
+        combined_df = pd.concat([won_df, lost_df], ignore_index=True)
         
-        # Convert CPI columns to numeric before filtering
-        won_df['CPI'] = pd.to_numeric(won_df['CPI'], errors='coerce')
-        lost_df['CPI'] = pd.to_numeric(lost_df['CPI'], errors='coerce')
-        
-        # Make sure numeric columns are numeric
-        for col in ['IR', 'LOI', 'Completes', 'Revenue']:
-            won_df[col] = pd.to_numeric(won_df[col], errors='coerce')
-            lost_df[col] = pd.to_numeric(lost_df[col], errors='coerce')
-        
-        # Filter out invalid CPI values
-        won_df = won_df[won_df['CPI'].notna() & (won_df['CPI'] > 0)]
-        lost_df = lost_df[lost_df['CPI'].notna() & (lost_df['CPI'] > 0)]
-        
-        # Log data shapes
-        logger.info(f"Won deals count: {len(won_df)}")
-        logger.info(f"Lost deals count: {len(lost_df)}")
-        
-        # Filter out extreme values based on config
+        # Apply basic filtering (handle extreme values)
+        # Calculate 95th percentile for CPI to identify outliers
+        cpi_95th = combined_df['CPI'].quantile(0.95)
         outlier_threshold = FEATURE_ENGINEERING_CONFIG.get('outlier_threshold', 0.95)
         
-        won_percentile = won_df['CPI'].quantile(outlier_threshold)
-        lost_percentile = lost_df['CPI'].quantile(outlier_threshold)
+        # Create filtered datasets (with extreme values removed)
+        won_df_filtered = won_df[won_df['CPI'] <= cpi_95th].copy()
+        lost_df_filtered = lost_df[lost_df['CPI'] <= cpi_95th].copy()
+        combined_df_filtered = combined_df[combined_df['CPI'] <= cpi_95th].copy()
         
-        won_df_filtered = won_df[won_df['CPI'] <= won_percentile]
-        lost_df_filtered = lost_df[lost_df['CPI'] <= lost_percentile]
+        # Log information about filtered data
+        won_filtered_pct = 100 * (1 - len(won_df_filtered) / len(won_df)) if len(won_df) > 0 else 0
+        lost_filtered_pct = 100 * (1 - len(lost_df_filtered) / len(lost_df)) if len(lost_df) > 0 else 0
         
-        # Determine common columns for combined dataset
-        common_columns = ['Client', 'CPI', 'IR', 'LOI', 'Completes', 'Revenue', 'Country', 'Type']
-        
-        # Add Segment if it exists
-        if 'Segment' in won_df.columns and 'Segment' in lost_df.columns:
-            common_columns.append('Segment')
-        
-        # Create a single combined dataframe with only the common columns
-        combined_df = pd.concat(
-            [won_df[common_columns], lost_df[common_columns]],
-            ignore_index=True
-        )
-        
-        # Create a filtered combined dataset
-        combined_df_filtered = pd.concat(
-            [won_df_filtered[common_columns], lost_df_filtered[common_columns]],
-            ignore_index=True
-        )
-        
-        # Update progress
+        if won_filtered_pct > 0:
+            message = f"Filtered out {won_filtered_pct:.1f}% of won deals with CPI > {cpi_95th:.2f}"
+            logger.info(message)
+            data_quality_issues.append(message)
+            
+        if lost_filtered_pct > 0:
+            message = f"Filtered out {lost_filtered_pct:.1f}% of lost deals with CPI > {cpi_95th:.2f}"
+            logger.info(message)
+            data_quality_issues.append(message)
+            
         if in_streamlit:
-            progress_bar.progress(95)
             progress_placeholder.markdown(f"""
             <div style="
                 background-color: {COLOR_SYSTEM['BACKGROUND']['CARD']};
-                border-radius: 0.5rem;
                 padding: 1rem;
-                margin-bottom: 1rem;
-                border-left: 4px solid {COLOR_SYSTEM['ACCENT']['GREEN']};
-            ">
-                <h4 style="margin-top: 0;">Data Loading: 95%</h4>
-                <p>Finalizing data preparation...</p>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        # Log data shapes after filtering
-        logger.info(f"Won deals filtered count: {len(won_df_filtered)}")
-        logger.info(f"Lost deals filtered count: {len(lost_df_filtered)}")
-        logger.info(f"Combined filtered count: {len(combined_df_filtered)}")
-        
-        # Calculate filtering stats for logging
-        won_filter_pct = (len(won_df) - len(won_df_filtered)) / len(won_df) * 100 if len(won_df) > 0 else 0
-        lost_filter_pct = (len(lost_df) - len(lost_df_filtered)) / len(lost_df) * 100 if len(lost_df) > 0 else 0
-        
-        logger.info(f"Won deals filtered out: {won_filter_pct:.1f}% (CPI > {won_percentile:.2f})")
-        logger.info(f"Lost deals filtered out: {lost_filter_pct:.1f}% (CPI > {lost_percentile:.2f})")
-        
-        # Complete progress
-        if in_streamlit:
-            progress_bar.progress(100)
-            progress_placeholder.markdown(f"""
-            <div style="
-                background-color: {COLOR_SYSTEM['BACKGROUND']['CARD']};
                 border-radius: 0.5rem;
-                padding: 1rem;
-                margin-bottom: 1rem;
                 border-left: 4px solid {COLOR_SYSTEM['ACCENT']['GREEN']};
+                margin-bottom: 1rem;
+                color: {COLOR_SYSTEM['PRIMARY']['MAIN']};
             ">
-                <h4 style="margin-top: 0;">Data Loading: Complete</h4>
-                <p>Successfully loaded {len(won_df)} won bids and {len(lost_df)} lost bids.</p>
+                <h3 style="margin-top: 0; color: {COLOR_SYSTEM['PRIMARY']['MAIN']};">Successfully loaded data</h3>
+                <ul style="margin-bottom: 0; color: {COLOR_SYSTEM['PRIMARY']['LIGHT']};">
+                    <li><b>Won bids</b>: {len(won_df)}</li>
+                    <li><b>Lost bids</b>: {len(lost_df)}</li>
+                    <li><b>Combined</b>: {len(combined_df)}</li>
+                </ul>
             </div>
             """, unsafe_allow_html=True)
             
-            # Clear progress bar after 1 second
-            import time
-            time.sleep(1)
-            progress_bar.empty()
-        
         # Return all datasets
         return {
             'won': won_df,
@@ -384,44 +362,24 @@ def load_data() -> Dict[str, pd.DataFrame]:
             'lost': lost_df,
             'lost_filtered': lost_df_filtered,
             'combined': combined_df,
-            'combined_filtered': combined_df_filtered
+            'combined_filtered': combined_df_filtered,
+            'data_quality_issues': data_quality_issues
         }
-    
+        
     except Exception as e:
-        logger.error(f"Error in load_data: {e}", exc_info=True)
-        
-        # Show error message in Streamlit if available
-        if 'progress_placeholder' in locals() and progress_placeholder is not None:
-            progress_placeholder.error(f"Error loading data: {str(e)}")
-            
-            # Provide additional help based on error type
-            if isinstance(e, FileNotFoundError):
-                progress_placeholder.markdown(f"""
-                <div style="
-                    background-color: {COLOR_SYSTEM['BACKGROUND']['CARD']};
-                    border-radius: 0.5rem;
-                    padding: 1rem;
-                    margin-top: 1rem;
-                    border-left: 4px solid {COLOR_SYSTEM['ACCENT']['YELLOW']};
-                ">
-                    <h4 style="margin-top: 0;">Troubleshooting Help</h4>
-                    <p>Make sure the following data files exist in the correct location:</p>
-                    <ul>
-                        <li><code>{os.path.basename(INVOICED_JOBS_FILE)}</code></li>
-                        <li><code>{os.path.basename(LOST_DEALS_FILE)}</code></li>
-                    </ul>
-                    <p>Check that the file paths in <code>config.py</code> are correct.</p>
-                </div>
-                """, unsafe_allow_html=True)
-        
+        logger.error(f"Error loading data: {str(e)}", exc_info=True)
+        if in_streamlit and progress_placeholder:
+            progress_placeholder.markdown(f"""
+            <div style="
+                background-color: {COLOR_SYSTEM['BACKGROUND']['CARD']};
+                padding: 1rem;
+                border-radius: 0.5rem;
+                border-left: 4px solid {COLOR_SYSTEM['ACCENT']['RED']};
+                margin-bottom: 1rem;
+                color: {COLOR_SYSTEM['ACCENT']['RED']};
+            ">
+                <h3 style="margin-top: 0; color: {COLOR_SYSTEM['ACCENT']['RED']};">Error loading data</h3>
+                <p style="margin-bottom: 0;">{str(e)}</p>
+            </div>
+            """, unsafe_allow_html=True)
         raise
-
-if __name__ == "__main__":
-    # Test the data loading function
-    try:
-        data = load_data()
-        print("Data loaded successfully.")
-        for key, df in data.items():
-            print(f"{key}: {df.shape}")
-    except Exception as e:
-        print(f"Error loading data: {e}")
