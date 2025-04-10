@@ -43,73 +43,111 @@ except ImportError:
         }
     }
 
-def predict_cpi(models: Dict[str, Any], user_input: Dict[str, float], feature_names: List[str]) -> Dict[str, float]:
+def predict_cpi(models: Dict[str, Any], user_input: Dict[str, float], feature_names: List[str]) -> Dict[str, Any]:
     """
-    Predict CPI based on user input using trained models.
+    Predict CPI based on user input with improved error handling and validation.
+    """
+    result = {
+        'status': 'success',
+        'errors': [],
+        'warnings': [],
+        'predictions': {}
+    }
     
-    Args:
-        models (Dict[str, Any]): Dictionary of trained models.
-        user_input (Dict[str, float]): Dictionary with user input parameters.
-        feature_names (List[str]): List of feature names expected by the models.
-        
-    Returns:
-        Dict[str, float]: Dictionary of model predictions keyed by model name.
-    """
     try:
         logger.info(f"Making predictions with user input: {user_input}")
         
-        # Create a DataFrame using user_input ensuring the correct column order
-        input_df = pd.DataFrame([user_input], columns=[col for col in feature_names if col in user_input])
+        # Validate models
+        if not models:
+            result['status'] = 'error'
+            result['errors'].append("No trained models provided")
+            return result
+            
+        # Create a DataFrame using user_input for the columns we have
+        available_inputs = {k: v for k, v in user_input.items() if k in feature_names}
+        missing_inputs = [col for col in ['IR', 'LOI', 'Completes'] if col not in available_inputs]
         
-        # Fill missing features with default value 0
-        for col in feature_names:
-            if col not in input_df.columns or input_df[col].isna().any():
-                input_df[col] = 0
-                logger.info(f"Feature '{col}' missing or NaN in input. Defaulting to 0.")
+        if missing_inputs:
+            result['warnings'].append(f"Missing required inputs: {', '.join(missing_inputs)}")
+            
+        # Create input dataframe for prediction
+        input_df = pd.DataFrame([available_inputs])
         
-        # Add derived features if they are not present
-        if 'IR' in input_df and 'LOI' in input_df and 'IR_LOI_Ratio' not in input_df:
-            input_df['IR_LOI_Ratio'] = input_df['IR'] / input_df['LOI'].replace(0, 1)  # Avoid division by zero
-        
-        if 'IR' in input_df and 'Completes' in input_df and 'IR_Completes_Ratio' not in input_df:
-            input_df['IR_Completes_Ratio'] = input_df['IR'] / input_df['Completes'].replace(0, 1)
-        
-        if 'LOI' in input_df and 'Completes' in input_df and 'LOI_Completes_Ratio' not in input_df:
-            input_df['LOI_Completes_Ratio'] = input_df['LOI'] / input_df['Completes'].replace(0, 1)
-        
-        if 'IR' in input_df and 'LOI' in input_df and 'IR_LOI_Product' not in input_df:
+        # Safely add derived features
+        if 'IR' in input_df.columns and 'LOI' in input_df.columns and 'IR_LOI_Ratio' in feature_names:
+            # Handle zero or negative LOI 
+            if input_df['LOI'].iloc[0] <= 0:
+                input_df['LOI'] = input_df['LOI'].replace(0, 0.1)
+                result['warnings'].append("LOI value was zero or negative, replaced with 0.1 for calculations")
+            input_df['IR_LOI_Ratio'] = input_df['IR'] / input_df['LOI']
+            
+        if 'IR' in input_df.columns and 'Completes' in input_df.columns and 'IR_Completes_Ratio' in feature_names:
+            # Handle zero or negative Completes
+            if input_df['Completes'].iloc[0] <= 0:
+                input_df['Completes'] = input_df['Completes'].replace(0, 0.1)
+                result['warnings'].append("Completes value was zero or negative, replaced with 0.1 for calculations")
+            input_df['IR_Completes_Ratio'] = input_df['IR'] / input_df['Completes']
+            
+        if 'IR' in input_df.columns and 'LOI' in input_df.columns and 'IR_LOI_Product' in feature_names:
             input_df['IR_LOI_Product'] = input_df['IR'] * input_df['LOI']
-        
-        if 'Completes' in input_df and 'Log_Completes' not in input_df:
-            input_df['Log_Completes'] = np.log1p(input_df['Completes'])
-        
-        # Add the Type column if needed (assume we want won bid prediction by default)
-        if 'Type_Won' in feature_names and 'Type_Won' not in input_df:
+            
+        if 'Completes' in input_df.columns and 'Log_Completes' in feature_names:
+            # Handle zero or negative for log transform
+            if input_df['Completes'].iloc[0] <= 0:
+                input_df['Completes'] = input_df['Completes'].replace(0, 1)
+                result['warnings'].append("Completes value was zero or negative, replaced with 1 for log calculation")
+            input_df['Log_Completes'] = np.log(input_df['Completes'])
+            
+        if all(col in input_df.columns for col in ['IR', 'LOI', 'Completes']) and 'CPI_Efficiency' in feature_names:
+            # Handle zero LOI for efficiency calculation
+            if input_df['LOI'].iloc[0] <= 0:
+                input_df['LOI'] = input_df['LOI'].replace(0, 0.1)
+            input_df['CPI_Efficiency'] = (input_df['IR'] / 100) * (1 / input_df['LOI']) * input_df['Completes']
+            
+        # Add Type_Won if needed (default to 1 for prediction as a won bid)
+        if 'Type_Won' in feature_names and 'Type_Won' not in input_df.columns:
             input_df['Type_Won'] = 1
+            
+        # Create final input with all required columns
+        final_input = pd.DataFrame(columns=feature_names)
+        for col in feature_names:
+            if col in input_df.columns:
+                final_input[col] = input_df[col]
+            else:
+                final_input[col] = 0
+                result['warnings'].append(f"Feature '{col}' not provided, defaulting to 0")
         
-        # Ensure final DataFrame has exactly the same columns (in order) as feature_names
-        final_input = input_df.reindex(columns=feature_names, fill_value=0)
-        
-        predictions = {}
-        
-        # Run predictions for each model in the provided dictionary
-        for model_name, model in models.items():
+        # Make predictions with each model
+        for name, model in models.items():
             try:
-                pred_value = model.predict(final_input)[0]
-                predictions[model_name] = pred_value
-                logger.info(f"{model_name} prediction: ${pred_value:.2f}")
+                pred = model.predict(final_input)[0]
+                
+                # Validate prediction (must be positive for CPI)
+                if pred <= 0:
+                    result['warnings'].append(f"Model '{name}' produced non-positive CPI: {pred:.2f}, adjusting to 0.01")
+                    pred = 0.01
+                    
+                result['predictions'][name] = pred
+                logger.info(f"{name} prediction: ${pred:.2f}")
+                
             except Exception as e:
-                logger.error(f"Error making prediction with {model_name} model: {e}", exc_info=True)
-                predictions[model_name] = None
+                logger.error(f"Error making prediction with {name} model: {str(e)}")
+                result['warnings'].append(f"Failed to get prediction from {name} model: {str(e)}")
         
-        # Remove any models that returned None
-        predictions = {k: v for k, v in predictions.items() if v is not None}
+        # Calculate average prediction if we have any successful predictions
+        if result['predictions']:
+            result['predictions']['Average'] = sum(result['predictions'].values()) / len(result['predictions'])
+        else:
+            result['status'] = 'error'
+            result['errors'].append("Failed to generate any valid predictions")
+            
+        return result
         
-        return predictions
-    
     except Exception as e:
-        logger.error(f"Error in predict_cpi: {e}", exc_info=True)
-        return {}
+        logger.error(f"Error in predict_cpi: {str(e)}")
+        result['status'] = 'error'
+        result['errors'].append(f"Unexpected error in prediction: {str(e)}")
+        return result
 
 def get_prediction_metrics(predictions: Dict[str, float]) -> Dict[str, float]:
     """

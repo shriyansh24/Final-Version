@@ -25,43 +25,61 @@ from config import (
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Update the COLUMN_MAPPING dictionary to include all necessary mappings
-COLUMN_MAPPING = {
-    'Incidence Rate': 'IR',
-    'IR%': 'IR',
-    'Actual Ir': 'IR',  # Add this mapping
-    'Actual IR': 'IR',
-    'Length of Interview': 'LOI',
-    'Interview Length': 'LOI',
-    'Actual Loi': 'LOI',  # Add this mapping
-    'Number of Completes': 'Completes',
-    'Complete': 'Completes',  # Add this mapping
-    'Qty': 'Completes',  # Add this mapping
-    'Customer Rate': 'CPI',
-    'Cost Per Interview': 'CPI',
-}
 
 # Fix the standardize_columns function to be more explicit
+# Fix for data_loader.py - standardize_columns function
+
 def standardize_columns(df: pd.DataFrame) -> pd.DataFrame:
     """
     Rename columns in a DataFrame based on known mappings to standard names.
-
-    Args:
-        df (pd.DataFrame): Input DataFrame.
-
-    Returns:
-        pd.DataFrame: Standardized DataFrame.
+    Now with comprehensive mapping and better logging.
     """
     df = df.copy()
+    
+    # Expanded column mapping with all possible variations
+    column_mapping = {
+        'Customer Rate': 'CPI',
+        'Cost Per Interview': 'CPI',
+        ' CPI ': 'CPI',
+        'Incidence Rate': 'IR',
+        'IR%': 'IR',
+        'Actual Ir': 'IR',
+        'Actual IR': 'IR',
+        'Length of Interview': 'LOI',
+        'Interview Length': 'LOI',
+        'Actual Loi': 'LOI',
+        'Number of Completes': 'Completes',
+        'Complete': 'Completes',
+        'Qty': 'Completes',
+        'Sample Size': 'Completes',
+        'Total Completes': 'Completes',
+        ' Actual Project Revenue ': 'Revenue',
+        'Item Amount': 'Revenue',
+        'Project Code Parent': 'ProjectId',
+        'Record Id': 'DealId',
+        'Client Name': 'Client',
+        'Account Name': 'Client',
+        'Description (Items)': 'Country'
+    }
     
     # Log original columns for debugging
     logger.info(f"Original columns: {df.columns.tolist()}")
     
     # Apply mappings for columns that exist
-    rename_dict = {k: v for k, v in COLUMN_MAPPING.items() if k in df.columns}
+    rename_dict = {k: v for k, v in column_mapping.items() if k in df.columns}
     if rename_dict:
         logger.info(f"Renaming columns: {rename_dict}")
         df = df.rename(columns=rename_dict)
+    
+    # Also try case-insensitive matching for remaining columns
+    standard_cols = set(column_mapping.values())
+    for std_col in standard_cols:
+        if std_col not in df.columns:
+            # Look for case-insensitive matches
+            matches = [col for col in df.columns if col.lower() == std_col.lower()]
+            if matches:
+                df = df.rename(columns={matches[0]: std_col})
+                logger.info(f"Case-insensitive rename: {matches[0]} -> {std_col}")
     
     # Log final columns after standardization
     logger.info(f"Standardized columns: {df.columns.tolist()}")

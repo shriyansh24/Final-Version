@@ -170,18 +170,10 @@ def apply_all_bins(df: pd.DataFrame) -> pd.DataFrame:
         logger.error(f"Error in apply_all_bins: {e}", exc_info=True)
         return df
 
-def impute_missing_values(df: pd.DataFrame, method: str = 'knn', 
+def impute_missing_values(df: pd.DataFrame, method: str = 'simple', 
                           cols_to_impute: Optional[List[str]] = None) -> pd.DataFrame:
     """
-    Impute missing values using various advanced methods.
-    
-    Args:
-        df (pd.DataFrame): Input dataframe.
-        method (str): Imputation method to use ('simple', 'knn', 'iterative')
-        cols_to_impute (List[str], optional): List of columns to impute. If None, imputes all numeric columns.
-        
-    Returns:
-        pd.DataFrame: Dataframe with imputed values.
+    Impute missing values with fallback mechanism to ensure robustness.
     """
     try:
         df = df.copy()
@@ -201,10 +193,6 @@ def impute_missing_values(df: pd.DataFrame, method: str = 'knn',
         
         # Check for columns that exist in the dataframe
         valid_cols = [col for col in cols_to_impute if col in df.columns]
-        missing_cols = [col for col in cols_to_impute if col not in df.columns]
-        
-        if missing_cols:
-            logger.warning(f"Columns not found in dataframe for imputation: {missing_cols}")
         
         if not valid_cols:
             logger.warning("No valid columns found for imputation")
@@ -221,36 +209,49 @@ def impute_missing_values(df: pd.DataFrame, method: str = 'knn',
         
         # Log missing data summary
         missing_summary = data_to_impute.isna().sum()
-        if missing_summary.sum() > 0:
-            logger.info(f"Missing values before imputation:\n{missing_summary[missing_summary > 0]}")
-        else:
+        if missing_summary.sum() == 0:
             logger.info("No missing values to impute")
             return df
+            
+        logger.info(f"Missing values before imputation:\n{missing_summary[missing_summary > 0]}")
         
-        # Apply specified imputation method
-        if method == 'simple':
-            # Use median for numeric columns
-            imputer = SimpleImputer(strategy='median')
-            imputed_data = imputer.fit_transform(data_to_impute)
+        # Try the specified method with fallbacks
+        try:
+            if method == 'knn':
+                # Try KNN imputation first
+                try:
+                    imputer = KNNImputer(n_neighbors=5, weights='distance')
+                    imputed_data = imputer.fit_transform(data_to_impute)
+                    logger.info("Successfully used KNN imputation")
+                except Exception as e:
+                    logger.warning(f"KNN imputation failed: {str(e)}. Falling back to simple imputation.")
+                    method = 'simple'
+                    
+            if method == 'iterative':
+                # Try iterative imputation
+                try:
+                    imputer = IterativeImputer(random_state=42, max_iter=10)
+                    imputed_data = imputer.fit_transform(data_to_impute)
+                    logger.info("Successfully used iterative imputation")
+                except Exception as e:
+                    logger.warning(f"Iterative imputation failed: {str(e)}. Falling back to simple imputation.")
+                    method = 'simple'
             
-        elif method == 'knn':
-            # Use KNN imputation
-            imputer = KNNImputer(n_neighbors=5, weights='distance')
-            imputed_data = imputer.fit_transform(data_to_impute)
+            if method == 'simple':
+                # Simple median imputation as fallback
+                imputer = SimpleImputer(strategy='median')
+                imputed_data = imputer.fit_transform(data_to_impute)
+                logger.info("Used simple median imputation")
+                
+        except Exception as e:
+            # Final fallback: manual imputation
+            logger.warning(f"All imputation methods failed: {str(e)}. Using manual median imputation.")
+            imputed_data = data_to_impute.values.copy()
             
-        elif method == 'iterative':
-            # Use iterative imputation
-            imputer = IterativeImputer(
-                random_state=42,
-                max_iter=10,
-                verbose=0
-            )
-            imputed_data = imputer.fit_transform(data_to_impute)
-        else:
-            # Default to median if method not recognized
-            logger.warning(f"Unrecognized imputation method: {method}. Using median imputation.")
-            imputer = SimpleImputer(strategy='median')
-            imputed_data = imputer.fit_transform(data_to_impute)
+            for j, col in enumerate(valid_cols):
+                col_median = np.nanmedian(imputed_data[:, j])
+                mask = np.isnan(imputed_data[:, j])
+                imputed_data[mask, j] = col_median
         
         # Convert back to DataFrame with original column names
         imputed_df = pd.DataFrame(imputed_data, columns=valid_cols, index=df.index)
@@ -259,35 +260,27 @@ def impute_missing_values(df: pd.DataFrame, method: str = 'knn',
         if non_numeric_data is not None:
             imputed_df = pd.concat([imputed_df, non_numeric_data], axis=1)
         
-        # Log missing data summary after imputation
+        # Verify no missing values remain
         post_imputation_missing = imputed_df[valid_cols].isna().sum()
         if post_imputation_missing.sum() > 0:
-            logger.warning(f"Still have missing values after imputation:\n{post_imputation_missing[post_imputation_missing > 0]}")
-            # Fill any remaining NA values for numeric columns
+            # Final cleanup of any remaining NaN values
             for col in valid_cols:
                 if imputed_df[col].isna().any():
-                    imputed_df[col] = imputed_df[col].fillna(data_to_impute[col].median())
-        
-        logger.info(f"Successfully imputed missing values using {method} method")
+                    col_median = data_to_impute[col].median()
+                    imputed_df[col] = imputed_df[col].fillna(col_median)
+                    
+            logger.info("Cleaned up remaining missing values")
+            
         return imputed_df
-    
+        
     except Exception as e:
-        logger.error(f"Error in impute_missing_values: {e}", exc_info=True)
+        logger.error(f"Error in impute_missing_values: {str(e)}")
         logger.warning("Returning original dataframe due to imputation error")
         return df
 
 def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Perform feature engineering on the dataframe with advanced imputation.
-    
-    This function ensures the key columns are numeric, uses imputation instead of dropping rows,
-    creates ratio and product interaction features, log transformations, and efficiency metrics.
-
-    Args:
-        df (pd.DataFrame): Input dataframe.
-
-    Returns:
-        pd.DataFrame: Dataframe with additional engineered features and imputed values.
+    Safely perform feature engineering with proper zero and NaN handling.
     """
     try:
         logger.info("Starting feature engineering")
@@ -300,9 +293,6 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
         key_cols = ['IR', 'LOI', 'Completes', 'CPI']
         for col in key_cols:
             if col in df.columns:
-                non_numeric = pd.to_numeric(df[col], errors='coerce').isna() & ~df[col].isna()
-                if non_numeric.any():
-                    logger.warning(f"Column {col} had {non_numeric.sum()} non-numeric values converted to NaN")
                 df[col] = pd.to_numeric(df[col], errors='coerce')
         
         # Handle zeros in LOI and Completes which could cause issues in ratios
@@ -310,6 +300,7 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
         if 'LOI' in df.columns and (df['LOI'] == 0).any():
             zero_loi_count = (df['LOI'] == 0).sum()
             if zero_loi_count > 0:
+                # Use a small value based on the minimum non-zero value
                 min_non_zero = df[df['LOI'] > 0]['LOI'].min() / 2 if (df['LOI'] > 0).any() else 0.5
                 logger.info(f"Replacing {zero_loi_count} zero values in LOI with {min_non_zero}")
                 df.loc[df['LOI'] == 0, 'LOI'] = min_non_zero
@@ -321,114 +312,60 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
                 logger.info(f"Replacing {zero_completes_count} zero values in Completes with {min_non_zero}")
                 df.loc[df['Completes'] == 0, 'Completes'] = min_non_zero
         
-        # Impute missing values in key columns using iterative imputation
-        cols_to_impute = [col for col in key_cols if col in df.columns and col != 'CPI']
-        if cols_to_impute:
-            df = impute_missing_values(df, method='iterative', cols_to_impute=cols_to_impute)
-        
-        # Create basic ratio features - with safety for division
+        # Safely create ratio features
         if all(col in df.columns for col in ['IR', 'LOI']):
-            df['IR_LOI_Ratio'] = df['IR'] / df['LOI'].replace(0, 0.5)
+            df['IR_LOI_Ratio'] = df['IR'] / df['LOI']
             
         if all(col in df.columns for col in ['IR', 'Completes']):
-            df['IR_Completes_Ratio'] = df['IR'] / df['Completes'].replace(0, 0.5)
+            df['IR_Completes_Ratio'] = df['IR'] / df['Completes']
             
         if all(col in df.columns for col in ['LOI', 'Completes']):
-            df['LOI_Completes_Ratio'] = df['LOI'] / df['Completes'].replace(0, 0.5)
+            df['LOI_Completes_Ratio'] = df['LOI'] / df['Completes']
         
-        # Create interaction terms if enabled
-        if FEATURE_ENGINEERING_CONFIG.get('create_interaction_terms', True):
-            if all(col in df.columns for col in ['IR', 'LOI']):
-                df['IR_LOI_Product'] = df['IR'] * df['LOI']
+        # Create interaction terms 
+        if all(col in df.columns for col in ['IR', 'LOI']):
+            df['IR_LOI_Product'] = df['IR'] * df['LOI']
                 
-            if all(col in df.columns for col in ['CPI', 'LOI']):
-                df['CPI_per_Minute'] = df['CPI'] / df['LOI'].replace(0, 0.5)
-                
-            if all(col in df.columns for col in ['IR', 'Completes']):
-                df['IR_Completes_Product'] = df['IR'] * df['Completes']
-                
-            logger.info("Created interaction terms for feature engineering")
-        
-        # Create log transformations if enabled - safely handling zeros and negative values
-        if FEATURE_ENGINEERING_CONFIG.get('create_log_transforms', True):
-            # Function to safely create log transforms
-            def safe_log(series):
-                # Make sure values are positive before log transform
-                min_val = series[series > 0].min() if (series > 0).any() else 1e-6
-                adjusted = series.copy()
-                adjusted[adjusted <= 0] = min_val / 2
-                return np.log1p(adjusted)
+        if all(col in df.columns for col in ['CPI', 'LOI']):
+            df['CPI_per_Minute'] = df['CPI'] / df['LOI']
             
-            for col in ['Completes', 'IR', 'LOI', 'CPI']:
-                if col in df.columns:
-                    df[f'Log_{col}'] = safe_log(df[col])
-            
-            logger.info("Created log transformations for feature engineering")
-        
-        # Efficiency metric: (IR/100) × (1/LOI) × Completes
-        if all(col in df.columns for col in ['IR', 'LOI', 'Completes']):
-            df['CPI_Efficiency'] = (df['IR'] / 100) * (1 / df['LOI'].replace(0, 0.5)) * df['Completes']
-        
-        # Normalized versions of key variables
-        for col in ['IR', 'LOI', 'Completes']:
+        # Safely create log transformations 
+        for col in ['Completes', 'IR', 'LOI', 'CPI']:
             if col in df.columns:
-                mean, std = df[col].mean(), df[col].std()
-                if not pd.isna(std) and std > 0:
-                    df[f'{col}_Normalized'] = (df[col] - mean) / std
+                # Ensure positive values before log transform
+                df[f'{col}_positive'] = df[col].clip(lower=1e-6)
+                df[f'Log_{col}'] = np.log1p(df[f'{col}_positive'])
+        
+        # Create efficiency metric safely
+        if all(col in df.columns for col in ['IR', 'LOI', 'Completes']):
+            df['CPI_Efficiency'] = (df['IR'] / 100) * (1 / df['LOI']) * df['Completes']
         
         # Replace infinities with NaN
-        df.replace([np.inf, -np.inf], np.nan, inplace=True)
+        inf_mask = (df == np.inf) | (df == -np.inf)
+        inf_count = inf_mask.sum().sum()
+        if inf_count > 0:
+            df.replace([np.inf, -np.inf], np.nan, inplace=True)
+            logger.warning(f"Replaced {inf_count} infinity values with NaN")
         
-        # Impute any newly created features with NaN values
-        new_features = [col for col in df.columns if col not in key_cols and col != 'Type' 
-                        and df[col].dtype.kind in 'fc']  # float or complex
-        
-        # For the derived features, use simple median imputation (faster and sufficient)
-        if new_features:
-            missing_in_new = df[new_features].isna().sum()
-            if missing_in_new.sum() > 0:
-                logger.info(f"Imputing {missing_in_new.sum()} missing values in derived features")
-                df = impute_missing_values(df, method='simple', cols_to_impute=new_features)
-        
-        # Count final number of features created
-        new_features_count = len(df.columns) - len(key_cols)
-        logger.info(f"Feature engineering complete. Created {new_features_count} new features.")
-        
-        # Check for and report any remaining missing values
-        remaining_missing = df.isna().sum()
-        if remaining_missing.sum() > 0:
-            logger.warning(f"Warning: Still have {remaining_missing.sum()} missing values after feature engineering")
-            logger.debug(f"Columns with missing values:\n{remaining_missing[remaining_missing > 0]}")
-        
-        # Instead of dropping rows, use final pass of simple imputation for any remaining NaN
-        if remaining_missing.sum() > 0:
-            cols_with_missing = remaining_missing[remaining_missing > 0].index.tolist()
-            df = impute_missing_values(df, method='simple', cols_to_impute=cols_with_missing)
-        
-        # Final check to ensure no missing values remain
-        final_missing = df.isna().sum().sum()
-        if final_missing > 0:
-            logger.warning(f"Warning: {final_missing} missing values still remain. Final fallback to fillna")
-            # Last resort - fill with median for each column
-            for col in df.columns:
-                if df[col].isna().any():
-                    if df[col].dtype.kind in 'fc':  # float or complex
-                        df[col] = df[col].fillna(df[col].median())
-                    elif df[col].dtype.kind in 'iub':  # integer, unsigned, boolean
-                        df[col] = df[col].fillna(df[col].median())
-                    else:  # string or object - fill with most common value
-                        df[col] = df[col].fillna(df[col].mode().iloc[0] if not df[col].mode().empty else "Unknown")
-        
-        # Compare row counts to make sure we didn't lose any data
+        # Final imputation for any NaN values in engineered features
+        engineered_cols = [col for col in df.columns if col not in key_cols + ['Type']]
+        for col in engineered_cols:
+            if df[col].isna().any():
+                missing_count = df[col].isna().sum()
+                median_val = df[col].median()
+                df[col] = df[col].fillna(median_val)
+                logger.info(f"Filled {missing_count} NaN values in '{col}' with median: {median_val}")
+            
+        # Verify row count didn't change
         if len(df) != original_rows:
-            logger.error(f"Error: Row count changed from {original_rows} to {len(df)}")
+            logger.error(f"Row count changed from {original_rows} to {len(df)}")
         else:
             logger.info(f"Successfully preserved all {original_rows} rows during feature engineering")
             
         return df
     
     except Exception as e:
-        logger.error(f"Error in engineer_features: {e}", exc_info=True)
+        logger.error(f"Error in engineer_features: {str(e)}")
         return df
 
 def prepare_model_data(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Series]:
